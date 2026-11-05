@@ -288,8 +288,12 @@ fn hello(setup: &Setup, offers: Offers, browser: Option<(u16, String)>) -> Value
     hello
 }
 
+/// A bell rung in Argus — an agent finished, failed, or asks — for this computer to show as a
+/// notification of its own: (why, session, text).
+pub type Bell<'a> = &'a dyn Fn(&str, &str, &str);
+
 /// Carry this computer to Argus until disconnected there, `stop` is set, or the connection goes.
-pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, say: &dyn Fn(&str)) -> Ended {
+pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, say: &dyn Fn(&str), bell: Bell) -> Ended {
     let url = format!("{}/api/computers/bridge", setup.url.replacen("http", "ws", 1));
     let mut request = match tungstenite::client::IntoClientRequest::into_client_request(url.as_str()) {
         Ok(r) => r,
@@ -430,6 +434,10 @@ pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, 
                             let _ = tx.send(In::Frame(frame.clone()));
                         }
                     }
+                    Some("bell") => {
+                        let get = |k: &str| frame.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+                        bell(&get("why"), &get("session"), &get("text"));
+                    }
                     Some("bye") => break Ended::GivenBack,
                     _ => {}
                 }
@@ -479,10 +487,10 @@ pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, 
 }
 
 /// Connect until disconnected in Argus or stopped here: made again when the connection drops.
-pub fn keep(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, say: &dyn Fn(&str)) -> Ended {
+pub fn keep(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, say: &dyn Fn(&str), bell: Bell) -> Ended {
     let mut wait = Duration::from_secs(1);
     loop {
-        match bridge(setup, browser, stop, say) {
+        match bridge(setup, browser, stop, say, bell) {
             Ended::Lost(why) => {
                 say(&format!("connection to {} lost ({why}); trying again in {}s", setup.url, wait.as_secs()));
                 let until = Instant::now() + wait;

@@ -1,6 +1,9 @@
 // The words, in the four languages Argus speaks. English is the key; a missing translation falls
 // back to it. {name} holes are filled by t().
 const IT = {
+  'Open Argus': 'Apri Argus',
+  'Argus in a window of its own, with the notifications of this computer': 'Argus in una finestra sua, con le notifiche di questo computer',
+  'Connect this computer or a folder first: then Argus opens here': 'Collega prima questo computer o una cartella: poi Argus si apre qui',
   'Update and restart': 'Aggiorna e riavvia',
   'Updating…': 'Aggiornamento…',
   'argus-sync {version} is ready': 'argus-sync {version} è pronto',
@@ -123,6 +126,9 @@ const IT = {
   'New folder here': 'Nuova cartella qui', 'New folder on the server': 'Nuova cartella sul server', 'Conflict': 'Conflitto', 'Later': 'Più tardi',
 };
 const ES = {
+  'Open Argus': 'Abrir Argus',
+  'Argus in a window of its own, with the notifications of this computer': 'Argus en una ventana propia, con las notificaciones de este ordenador',
+  'Connect this computer or a folder first: then Argus opens here': 'Conecta primero este ordenador o una carpeta: luego Argus se abre aquí',
   'Update and restart': 'Actualizar y reiniciar',
   'Updating…': 'Actualizando…',
   'argus-sync {version} is ready': 'argus-sync {version} está listo',
@@ -207,6 +213,9 @@ const ES = {
   'New folder here': 'Carpeta nueva aquí', 'New folder on the server': 'Carpeta nueva en el servidor', 'Conflict': 'Conflicto', 'Later': 'Más tarde',
 };
 const FR = {
+  'Open Argus': 'Ouvrir Argus',
+  'Argus in a window of its own, with the notifications of this computer': 'Argus dans une fenêtre à lui, avec les notifications de cet ordinateur',
+  'Connect this computer or a folder first: then Argus opens here': 'Connectez d’abord cet ordinateur ou un dossier : ensuite Argus s’ouvre ici',
   'Update and restart': 'Mettre à jour et redémarrer',
   'Updating…': 'Mise à jour…',
   'argus-sync {version} is ready': 'argus-sync {version} est prêt',

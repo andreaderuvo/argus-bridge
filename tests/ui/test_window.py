@@ -141,3 +141,17 @@ def test_no_bar_when_this_is_the_newest(make_page):
     page = make_page()
     page.wait("!!document.querySelector('.card')")
     assert page.eval("!document.querySelector('.updatebar')")
+
+
+def test_argus_opens_in_a_window_of_the_app(make_page):
+    page = make_page("?machine")
+    page.wait("!document.querySelector('#argus').hidden", what="Open Argus offered")
+    assert page.text("#argus") == "Open Argus"
+    page.click("#argus")
+    page.wait("window.__mock.calls.some(c => c[0] === 'open_argus')", what="asked of the app")
+
+
+def test_no_argus_to_open_with_nothing_connected(make_page):
+    page = make_page("?empty")
+    page.wait("!!document.querySelector('#main')")
+    assert page.eval("document.querySelector('#argus').hidden")

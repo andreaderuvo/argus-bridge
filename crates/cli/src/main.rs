@@ -229,7 +229,8 @@ fn computer(dir: &PathBuf, args: &[String]) -> Res {
         None
     };
     let stop = std::sync::atomic::AtomicBool::new(false);
-    let ended = computer::keep(&setup, browser.as_ref(), &stop, &|said| println!("{said}"));
+    let ended = computer::keep(&setup, browser.as_ref(), &stop, &|said| println!("{said}"),
+                               &|why, session, text| println!("[{why}] {session}: {text}"));
     if let Some(b) = &browser {
         b.stop();
     }

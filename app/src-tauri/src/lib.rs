@@ -594,7 +594,18 @@ fn start_machine(app: &AppHandle, shared: &Arc<Shared>) {
                 set("lost", line.to_string());
             }
         };
-        let ended = computer::keep(&setup, browser.as_ref(), &stop, &said);
+        // A bell of Argus — an agent finished, failed or asks — as a notification of this system.
+        let bell_app = app.clone();
+        let bell = move |why: &str, session: &str, text: &str| {
+            use tauri_plugin_notification::NotificationExt;
+            let title = match why {
+                "asking" => say_plain("{session} is waiting for you", session),
+                "failed" => say_plain("{session} failed", session),
+                _ => say_plain("{session} has finished", session),
+            };
+            let _ = bell_app.notification().builder().title(title).body(text).show();
+        };
+        let ended = computer::keep(&setup, browser.as_ref(), &stop, &said, &bell);
         if let Some(b) = &browser {
             b.stop();
         }
@@ -650,18 +661,64 @@ fn machine_forget(app: AppHandle, shared: tauri::State<Arc<Shared>>) -> Res<()> 
     Ok(())
 }
 
+/// A notification's title in the system's language (the window is not there to translate it).
+fn say_plain(template: &str, session: &str) -> String {
+    let who = if session.is_empty() { "Argus" } else { session };
+    words::tr(template).replace("{session}", who)
+}
+
+/// Argus itself, in a window of this app: a Dock icon of its own, no browser tabs. The address is
+/// the server this computer (or else the first folder) is connected to; you sign in once there.
+#[tauri::command]
+fn open_argus(app: AppHandle, shared: tauri::State<Arc<Shared>>) -> Res<()> {
+    open_argus_window(&app, &shared)
+}
+
+fn open_argus_window(app: &AppHandle, shared: &Shared) -> Res<()> {
+    if let Some(w) = app.get_webview_window("argus") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+        return Ok(());
+    }
+    let url = argus_sync_core::computer::Setup::load(&shared.dir).map(|s| s.url)
+        .or_else(|| Pairs::load(&shared.dir).pairs.first().map(|p| p.url.clone()))
+        .ok_or_else(|| say("Connect this computer or a folder first: then Argus opens here", &[]))?;
+    let parsed = url.parse::<tauri::Url>().map_err(|e| e.to_string())?;
+    tauri::WebviewWindowBuilder::new(app, "argus", tauri::WebviewUrl::External(parsed))
+        .title("Argus")
+        .inner_size(1360.0, 880.0)
+        .min_inner_size(420.0, 420.0)
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // ------------------------------------------------------------------------------- updating itself
 
-const UPDATE_EVERY: Duration = Duration::from_secs(6 * 3600);
+const UPDATE_EVERY: Duration = Duration::from_secs(3600);
 
 /// Ask GitHub whether a newer version is out. The updater only accepts one signed by the key whose
 /// public half is in tauri.conf.json: a release nobody signed is never offered, let alone installed.
 async fn look_for_update(app: &AppHandle, shared: &Shared) {
+    use tauri_plugin_notification::NotificationExt;
     use tauri_plugin_updater::UpdaterExt;
-    let found = match app.updater() {
-        Ok(u) => u.check().await.ok().flatten().map(|update| update.version),
+    let update = match app.updater() {
+        Ok(u) => u.check().await.ok().flatten(),
         Err(_) => None,
     };
+    // Installed at once, on its own, and started again: nobody has to press anything. A failure
+    // leaves the bar in the window, which tries again with one press.
+    if let Some(update) = &update {
+        let version = update.version.clone();
+        if update.download_and_install(|_, _| {}, || {}).await.is_ok() {
+            let _ = app.notification().builder().title("argus-sync")
+                .body(words::tr("Updated to {version}").replace("{version}", &version)).show();
+            std::thread::sleep(Duration::from_secs(2));
+            app.restart();
+        }
+    }
+    let found = update.map(|u| u.version);
     let changed = *shared.update.lock().unwrap() != found;
     *shared.update.lock().unwrap() = found;
     if changed {
@@ -720,11 +777,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .manage(shared.clone())
         .invoke_handler(tauri::generate_handler![
             get_snapshot, take_invite, inspect, connect, set_paused, pause_all, set_big, fetch, sync_now,
-            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget, update_now
+            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget, update_now, open_argus
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -742,10 +800,11 @@ pub fn run() {
                 take_links(&h2, &on_link, event.urls().into_iter().map(|u| u.to_string()).collect());
             });
 
+            let argus = MenuItem::with_id(app, "argus", tr("Open Argus"), true, None::<&str>)?;
             let open = MenuItem::with_id(app, "open", tr("Open argus-sync"), true, None::<&str>)?;
             let now = MenuItem::with_id(app, "now", tr("Sync now"), true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", tr("Quit"), true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &now, &quit])?;
+            let menu = Menu::with_items(app, &[&argus, &open, &now, &quit])?;
             let tray_shared = shared.clone();
             let mut tray = TrayIconBuilder::with_id("main")
                 .tooltip("argus-sync")
@@ -753,6 +812,11 @@ pub fn run() {
                 .show_menu_on_left_click(false)
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "open" => show(app),
+                    "argus" => {
+                        if let Some(sh) = app.try_state::<Arc<Shared>>() {
+                            let _ = open_argus_window(app, &sh);
+                        }
+                    }
                     "now" => tray_shared.nudge(),
                     "quit" => app.exit(0),
                     _ => {}

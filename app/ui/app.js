@@ -98,6 +98,10 @@ const timeOf = (at) => (at || '').slice(11, 16);
 function paint() {
   $('#computer').textContent = snap.computer ? t('on {computer}', { computer: snap.computer }) : '';
   $('#add').textContent = `+ ${t('Connect a folder')}`;
+  // Argus itself in a window of this app — when there is a server to open: this computer's, or a folder's.
+  $('#argus').textContent = t('Open Argus');
+  $('#argus').title = t('Argus in a window of its own, with the notifications of this computer');
+  $('#argus').hidden = !snap.machine && !snap.pairs.length;
   $('#pauseall').textContent = snap.paused_all ? t('Resume all') : t('Pause all');
   $('#pauseall').hidden = !snap.pairs.length;
   const main = $('#main');
@@ -435,6 +439,7 @@ async function moveIt(p) {
 // --------------------------------------------------------------------------------------- start
 
 $('#add').onclick = () => connectSheet();
+$('#argus').onclick = () => run('open_argus');
 $('#pauseall').onclick = () => run('pause_all', { paused: !snap.paused_all });
 listen('snapshot', (e) => { snap = e.payload; paint(); });
 listen('invite', (e) => takeLink(e.payload));

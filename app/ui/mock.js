@@ -67,6 +67,7 @@ window.__TAURI__ = {
           break;
         case 'machine_set': state.machine = { ...state.machine, offers: { browser: args.browser, terminal: args.terminal, actions: args.actions }, on: args.on, state: args.on ? 'connected' : 'off' }; break;
         case 'machine_forget': state.machine = null; break;
+        case 'open_argus': return null;
         case 'update_now': state.update = null; state.version = '0.1.2'; break;
         default: break;
       }
