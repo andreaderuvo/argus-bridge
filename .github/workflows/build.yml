@@ -24,13 +24,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Unit tests (names, plan, links)
         run: cargo test -p argus-sync-core --lib
+      # One Python, the one `python3` names: on newer runners `pip` and `python3` were two different ones.
+      - uses: actions/setup-python@v5
+        if: runner.os != 'Windows'
+        with:
+          python-version: "3.12"
       - name: Against a real Argus
         if: runner.os != 'Windows'      # Argus itself runs on Linux and macOS
         shell: bash
         run: |
           git clone --depth 1 https://github.com/andreaderuvo/argus.git ../argus-src
           # What Argus itself needs, from its own list: a package it starts needing must not break this.
-          pip install -r ../argus-src/requirements.txt
+          python3 -m pip install -r ../argus-src/requirements.txt
           ARGUS_SRC=$PWD/../argus-src cargo test -p argus-sync-core --test against_argus
       - name: The command-line client
         run: cargo build --release -p argus-sync-cli
