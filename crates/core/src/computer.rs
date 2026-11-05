@@ -330,6 +330,9 @@ pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, 
 
     let (to_server, from_channels) = mpsc::channel::<Value>();
     let mut channels: HashMap<u64, Sender<In>> = HashMap::new();
+    // Ports of the server shown on this computer's localhost, and the connections made to them.
+    let mut listening: HashMap<u64, Arc<AtomicBool>> = HashMap::new();
+    let tcp: Tcp = Arc::new(Mutex::new(HashMap::new()));
     let mut pinged = Instant::now();
     let ended = 'outer: loop {
         if stop.load(Ordering::Relaxed) {
@@ -391,6 +394,42 @@ pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, 
                             let _ = tx.send(In::Close);
                         }
                     }
+                    Some("forward") => {
+                        let port = frame.get("port").and_then(Value::as_u64).unwrap_or(0);
+                        let local = frame.get("local").and_then(Value::as_u64).unwrap_or(port);
+                        if let Some(old) = listening.remove(&port) {
+                            old.store(true, Ordering::Relaxed);
+                        }
+                        match listen_here(local as u16) {
+                            Ok((listener, at)) => {
+                                let stop = Arc::new(AtomicBool::new(false));
+                                listening.insert(port, stop.clone());
+                                let (tcp, out) = (tcp.clone(), to_server.clone());
+                                thread::spawn(move || accept(port, listener, stop, tcp, out));
+                                let _ = to_server.send(json!({"op": "forwarded", "port": port, "local": at, "ok": true}));
+                            }
+                            Err(e) => {
+                                let _ = to_server.send(json!({"op": "forwarded", "port": port, "ok": false,
+                                                              "why": format!("nothing could listen on localhost:{local} here: {e}")}));
+                            }
+                        }
+                    }
+                    Some("unforward") => {
+                        if let Some(old) = listening.remove(&frame.get("port").and_then(Value::as_u64).unwrap_or(0)) {
+                            old.store(true, Ordering::Relaxed);
+                        }
+                    }
+                    Some("tcp-opened") | Some("tcp-data") | Some("tcp-close") => {
+                        let key = frame.get("ch").and_then(Value::as_str).unwrap_or("").to_string();
+                        let mut open = tcp.lock().unwrap();
+                        if frame.get("op").and_then(Value::as_str) == Some("tcp-close") {
+                            if let Some(tx) = open.remove(&key) {
+                                let _ = tx.send(In::Close);
+                            }
+                        } else if let Some(tx) = open.get(&key) {
+                            let _ = tx.send(In::Frame(frame.clone()));
+                        }
+                    }
                     Some("bye") => break Ended::GivenBack,
                     _ => {}
                 }
@@ -428,6 +467,12 @@ pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, 
     for (_, tx) in channels {
         let _ = tx.send(In::Close);
     }
+    for (_, stop) in listening {
+        stop.store(true, Ordering::Relaxed);
+    }
+    for (_, tx) in tcp.lock().unwrap().drain() {
+        let _ = tx.send(In::Close);
+    }
     let _ = server.close(None);
     let _ = server.flush();
     ended
@@ -450,6 +495,91 @@ pub fn keep(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, sa
                 wait = (wait * 2).min(Duration::from_secs(30));
             }
             other => return other,
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------------- ports shown here
+
+type Tcp = Arc<Mutex<HashMap<String, Sender<In>>>>;
+
+/// A listener on this computer's loopback: the port asked, or the next free one of twenty.
+fn listen_here(from: u16) -> io::Result<(std::net::TcpListener, u16)> {
+    let mut last = None;
+    for at in from..from.saturating_add(20) {
+        match std::net::TcpListener::bind(("127.0.0.1", at)) {
+            Ok(l) => {
+                l.set_nonblocking(true)?;
+                return Ok((l, at));
+            }
+            Err(e) => last = Some(e),
+        }
+    }
+    Err(last.unwrap_or_else(|| io::Error::other("no port free")))
+}
+
+/// Every connection made to localhost:<local> here, carried to the port on the server.
+fn accept(port: u64, listener: std::net::TcpListener, stop: Arc<AtomicBool>, tcp: Tcp, out: Out) {
+    let mut n = 0u64;
+    while !stop.load(Ordering::Relaxed) {
+        match listener.accept() {
+            Ok((sock, _)) => {
+                n += 1;
+                let ch = format!("c{port}-{n}");
+                let (tx, rx) = mpsc::channel();
+                tcp.lock().unwrap().insert(ch.clone(), tx);
+                let (out, tcp) = (out.clone(), tcp.clone());
+                thread::spawn(move || {
+                    pump(&ch, port, sock, rx, &out);
+                    tcp.lock().unwrap().remove(&ch);
+                });
+            }
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => thread::sleep(Duration::from_millis(50)),
+            Err(_) => thread::sleep(Duration::from_millis(200)),
+        }
+    }
+}
+
+fn pump(ch: &str, port: u64, mut sock: TcpStream, inbox: Receiver<In>, out: &Out) {
+    let _ = out.send(json!({"op": "tcp", "ch": ch, "port": port}));
+    match inbox.recv_timeout(Duration::from_secs(15)) {
+        Ok(In::Frame(f)) if f.get("op").and_then(Value::as_str) == Some("tcp-opened") => {}
+        _ => return,
+    }
+    let _ = sock.set_nonblocking(false);
+    let _ = sock.set_read_timeout(Some(TICK));
+    let mut buf = [0u8; 65536];
+    loop {
+        match sock.read(&mut buf) {
+            Ok(0) => {
+                let _ = out.send(json!({"op": "tcp-close", "ch": ch}));
+                return;
+            }
+            Ok(n) => {
+                let _ = out.send(json!({"op": "tcp-data", "ch": ch, "b64": B64.encode(&buf[..n])}));
+            }
+            Err(e) if matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut) => {}
+            Err(_) => {
+                let _ = out.send(json!({"op": "tcp-close", "ch": ch}));
+                return;
+            }
+        }
+        loop {
+            match inbox.try_recv() {
+                Ok(In::Frame(f)) => {
+                    if let Some(bytes) = f.get("b64").and_then(Value::as_str).and_then(|b| B64.decode(b).ok()) {
+                        if sock.write_all(&bytes).is_err() {
+                            let _ = out.send(json!({"op": "tcp-close", "ch": ch}));
+                            return;
+                        }
+                    }
+                }
+                Ok(In::Close) | Err(TryRecvError::Disconnected) => {
+                    let _ = sock.shutdown(std::net::Shutdown::Both);
+                    return;
+                }
+                Err(TryRecvError::Empty) => break,
+            }
         }
     }
 }

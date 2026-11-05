@@ -4,7 +4,7 @@ members = ["crates/core", "crates/cli"]
 # app/src-tauri is a workspace of its own: it needs the GUI toolkits of the OS it is built on.
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 license = "MIT"
 
