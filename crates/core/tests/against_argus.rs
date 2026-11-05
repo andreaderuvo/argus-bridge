@@ -6,6 +6,7 @@ use argus_sync_core::engine::{Engine, Event, Settings};
 use argus_sync_core::local;
 use argus_sync_core::plan::Issue;
 use argus_sync_core::remote::Remote;
+use unicode_normalization::UnicodeNormalization;
 use std::collections::BTreeSet;
 use std::fs;
 use std::net::TcpListener;
@@ -180,7 +181,11 @@ fn two_way_sync_against_a_real_argus() {
     let (events, _) = round(&mut e);
     assert!(events.is_empty(), "{events:?}");
     assert!(!here.join(nfc).exists() || cfg!(target_os = "macos"), "not fetched as a second file");
-    assert!(!srv.join(nfd).exists(), "not uploaded as a second file");
+    // Counted, not asked with exists(): a Mac's file system answers yes for either form of a name
+    // (it does not tell NFC from NFD), so only the listing says whether there are one or two.
+    let same: Vec<_> = fs::read_dir(&srv).unwrap().filter_map(|d| d.ok()).map(|d| d.file_name().to_string_lossy().to_string())
+        .filter(|n| n.nfc().collect::<String>() == nfc).collect();
+    assert_eq!(same.len(), 1, "not uploaded as a second file: {same:?}");
 
     // 6. Asked for, the big file comes.
     e.settings.wanted.insert("reads.fastq".into());
