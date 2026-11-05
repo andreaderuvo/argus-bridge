@@ -221,10 +221,8 @@ fn computer(dir: &PathBuf, args: &[String]) -> Res {
         if flag("--headless") {
             extra.extend(["--headless=new".into(), "--no-sandbox".into(), "--disable-gpu".into()]);
         }
-        let b = std::sync::Arc::new(computer::Browser::new(exe, dir.join("browser-profile"), extra));
-        let (port, _, _) = b.ensure().map_err(|e| e.to_string())?;
-        println!("Chrome started, with a profile of its own ({})", computer::version(port));
-        Some(b)
+        println!("the browser is lent: {} starts, with a profile of its own, when an agent uses it", exe.display());
+        Some(std::sync::Arc::new(computer::Browser::new(exe, dir.join("browser-profile"), extra)))
     } else {
         None
     };

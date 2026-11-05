@@ -225,6 +225,13 @@ impl Browser {
         Ok(out)
     }
 
+    /// The Chrome running now, if any — without starting one.
+    pub fn running(&self) -> Option<(u16, String)> {
+        let mut now = self.now.lock().unwrap();
+        let c = now.as_mut()?;
+        matches!(c.child.try_wait(), Ok(None)).then(|| (c.port, c.ws_path.clone()))
+    }
+
     /// Close the Chrome it started (Disconnect, or the app quitting).
     pub fn stop(&self) {
         *self.now.lock().unwrap() = None;
@@ -282,8 +289,8 @@ enum In {
 fn hello(setup: &Setup, offers: Offers, browser: Option<(u16, String)>) -> Value {
     let mut hello = json!({"op": "hello", "name": setup.name, "os": std::env::consts::OS,
                            "client": concat!("argus-sync ", env!("CARGO_PKG_VERSION")), "offers": offers});
-    if let (true, Some((port, ws))) = (offers.browser, browser) {
-        hello["browser"] = json!({"ws": ws, "version": version(port)});
+    if let (true, Some((port, _))) = (offers.browser, browser) {
+        hello["browser"] = json!({"version": version(port)});
     }
     hello
 }
@@ -312,15 +319,11 @@ pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, 
         Err(e) => return Ended::Lost(e.to_string()),
     };
     set_timeout(server.get_ref(), TICK);
-    // The Chrome running now — or one started again, if it was closed since.
-    let running = browser.and_then(|b| match b.ensure() {
-        Ok((port, ws, _)) => Some((port, ws)),
-        Err(e) => {
-            say(&format!("the browser could not start: {e}"));
-            None
-        }
-    });
-    let offers = Offers { browser: setup.offers.browser && running.is_some(), ..setup.offers };
+    // The browser is offered, not started: Chrome opens only when an agent first uses it (a window
+    // popping up the moment this connects was asked away, 2026-11-05) — and Argus's address for it
+    // does not change with each Chrome.
+    let running = browser.and_then(|b| b.running());
+    let offers = Offers { browser: setup.offers.browser && browser.is_some(), ..setup.offers };
     if let Err(e) = server.send(Message::text(hello(setup, offers, running).to_string())) {
         return Ended::Lost(e.to_string());
     }
