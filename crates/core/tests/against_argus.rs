@@ -67,7 +67,7 @@ fn start() -> Option<Argus> {
     let t0 = Instant::now();
     while ureq::get(&format!("{url}/")).call().is_err() {
         // What it said, when it did not start: a missing package reads very differently from a slow runner.
-        assert!(t0.elapsed() < Duration::from_secs(30), "Argus did not start:\n{}",
+        assert!(t0.elapsed() < Duration::from_secs(120), "Argus did not start:\n{}",
                 fs::read_to_string(conf.join("argus.log")).unwrap_or_default());
         std::thread::sleep(Duration::from_millis(200));
     }
