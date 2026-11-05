@@ -29,7 +29,8 @@ jobs:
         shell: bash
         run: |
           git clone --depth 1 https://github.com/andreaderuvo/argus.git ../argus-src
-          pip install fastapi uvicorn pyyaml httpx
+          # What Argus itself needs, from its own list: a package it starts needing must not break this.
+          pip install -r ../argus-src/requirements.txt
           ARGUS_SRC=$PWD/../argus-src cargo test -p argus-sync-core --test against_argus
       - name: The command-line client
         run: cargo build --release -p argus-sync-cli
