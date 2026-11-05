@@ -575,19 +575,14 @@ fn start_machine(app: &AppHandle, shared: &Arc<Shared>) {
             drop(m);
             publish(&app, &shared);
         };
-        let chrome = if setup.offers.browser {
+        let browser = if setup.offers.browser {
             match computer::find_chrome() {
                 None => {
                     set("connecting", say("No Chrome here: the browser is not lent (install Chrome, or switch Browser off)", &[]));
                     None
                 }
-                Some(exe) => match computer::start_chrome(&exe, &shared.dir.join("browser-profile"), &[]) {
-                    Ok(c) => Some(c),
-                    Err(e) => {
-                        set("connecting", say("Chrome did not start: {why}", &[("why", e.to_string())]));
-                        None
-                    }
-                },
+                // Started by the bridge, and again whenever an agent needs it after the window was closed.
+                Some(exe) => Some(Arc::new(computer::Browser::new(exe, shared.dir.join("browser-profile"), Vec::new()))),
             }
         } else {
             None
@@ -599,7 +594,11 @@ fn start_machine(app: &AppHandle, shared: &Arc<Shared>) {
                 set("lost", line.to_string());
             }
         };
-        match computer::keep(&setup, chrome.as_ref(), &stop, &said) {
+        let ended = computer::keep(&setup, browser.as_ref(), &stop, &said);
+        if let Some(b) = &browser {
+            b.stop();
+        }
+        match ended {
             Ended::GivenBack => {
                 // Disconnected in Argus: off here too, until switched on again.
                 let mut off = setup.clone();
@@ -610,7 +609,6 @@ fn start_machine(app: &AppHandle, shared: &Arc<Shared>) {
             Ended::Stopped => {}
             Ended::Lost(why) => set("lost", why),
         }
-        drop(chrome);
     });
 }
 

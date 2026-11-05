@@ -215,20 +215,25 @@ fn computer(dir: &PathBuf, args: &[String]) -> Res {
         setup.offers = Offers { browser: flag("--browser"), terminal: flag("--terminal"), actions: flag("--actions") };
     }
     setup.save(dir).map_err(|e| e.to_string())?;
-    let chrome = if setup.offers.browser {
+    let browser = if setup.offers.browser {
         let exe = chrome_at.or_else(computer::find_chrome).ok_or("no Chrome found here (say where: --chrome <path>, or leave out --browser)")?;
         let mut extra: Vec<String> = Vec::new();
         if flag("--headless") {
             extra.extend(["--headless=new".into(), "--no-sandbox".into(), "--disable-gpu".into()]);
         }
-        let started = computer::start_chrome(&exe, &dir.join("browser-profile"), &extra).map_err(|e| e.to_string())?;
-        println!("Chrome started, with a profile of its own ({})", computer::version(started.port));
-        Some(started)
+        let b = std::sync::Arc::new(computer::Browser::new(exe, dir.join("browser-profile"), extra));
+        let (port, _, _) = b.ensure().map_err(|e| e.to_string())?;
+        println!("Chrome started, with a profile of its own ({})", computer::version(port));
+        Some(b)
     } else {
         None
     };
     let stop = std::sync::atomic::AtomicBool::new(false);
-    match computer::keep(&setup, chrome.as_ref(), &stop, &|said| println!("{said}")) {
+    let ended = computer::keep(&setup, browser.as_ref(), &stop, &|said| println!("{said}"));
+    if let Some(b) = &browser {
+        b.stop();
+    }
+    match ended {
         Ended::GivenBack => println!("disconnected in Argus: what this computer lent is closed"),
         Ended::Stopped => println!("stopped"),
         Ended::Lost(why) => return Err(why),

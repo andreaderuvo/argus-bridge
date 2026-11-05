@@ -1,6 +1,6 @@
 [package]
 name = "argus-sync-app"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 license = "MIT"
 description = "argus-sync: a folder of an Argus server, kept in sync with a folder on this computer"

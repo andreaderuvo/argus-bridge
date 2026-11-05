@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use tungstenite::stream::MaybeTlsStream;
@@ -196,6 +196,41 @@ pub fn start_chrome(exe: &Path, profile: &Path, extra: &[String]) -> io::Result<
     Err(io::Error::other("Chrome did not open its debugging port within 30 seconds"))
 }
 
+/// The browser this computer lends: started when the connection begins, and started again when an
+/// agent needs it after you closed it — closing that window is not switching Browser off.
+pub struct Browser {
+    exe: PathBuf,
+    profile: PathBuf,
+    extra: Vec<String>,
+    now: Mutex<Option<Chrome>>,
+}
+
+impl Browser {
+    pub fn new(exe: PathBuf, profile: PathBuf, extra: Vec<String>) -> Browser {
+        Browser { exe, profile, extra, now: Mutex::new(None) }
+    }
+
+    /// (port, `/devtools/browser/<id>`, started now): the Chrome running, or a new one if it was closed.
+    pub fn ensure(&self) -> io::Result<(u16, String, bool)> {
+        let mut now = self.now.lock().unwrap();
+        if let Some(c) = now.as_mut() {
+            if matches!(c.child.try_wait(), Ok(None)) {
+                return Ok((c.port, c.ws_path.clone(), false));
+            }
+        }
+        *now = None;
+        let c = start_chrome(&self.exe, &self.profile, &self.extra)?;
+        let out = (c.port, c.ws_path.clone(), true);
+        *now = Some(c);
+        Ok(out)
+    }
+
+    /// Close the Chrome it started (Disconnect, or the app quitting).
+    pub fn stop(&self) {
+        *self.now.lock().unwrap() = None;
+    }
+}
+
 /// What Chrome calls itself ("Chrome/131.0…"), from its own /json/version on loopback.
 pub fn version(port: u16) -> String {
     ureq::get(&format!("http://127.0.0.1:{port}/json/version"))
@@ -244,8 +279,17 @@ enum In {
     Close,
 }
 
+fn hello(setup: &Setup, offers: Offers, browser: Option<(u16, String)>) -> Value {
+    let mut hello = json!({"op": "hello", "name": setup.name, "os": std::env::consts::OS,
+                           "client": concat!("argus-sync ", env!("CARGO_PKG_VERSION")), "offers": offers});
+    if let (true, Some((port, ws))) = (offers.browser, browser) {
+        hello["browser"] = json!({"ws": ws, "version": version(port)});
+    }
+    hello
+}
+
 /// Carry this computer to Argus until disconnected there, `stop` is set, or the connection goes.
-pub fn bridge(setup: &Setup, chrome: Option<&Chrome>, stop: &AtomicBool, say: &dyn Fn(&str)) -> Ended {
+pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, say: &dyn Fn(&str)) -> Ended {
     let url = format!("{}/api/computers/bridge", setup.url.replacen("http", "ws", 1));
     let mut request = match tungstenite::client::IntoClientRequest::into_client_request(url.as_str()) {
         Ok(r) => r,
@@ -264,13 +308,16 @@ pub fn bridge(setup: &Setup, chrome: Option<&Chrome>, stop: &AtomicBool, say: &d
         Err(e) => return Ended::Lost(e.to_string()),
     };
     set_timeout(server.get_ref(), TICK);
-    let offers = Offers { browser: setup.offers.browser && chrome.is_some(), ..setup.offers };
-    let mut hello = json!({"op": "hello", "name": setup.name, "os": std::env::consts::OS,
-                           "client": concat!("argus-sync ", env!("CARGO_PKG_VERSION")), "offers": offers});
-    if let (true, Some(c)) = (offers.browser, chrome) {
-        hello["browser"] = json!({"ws": c.ws_path, "version": version(c.port)});
-    }
-    if let Err(e) = server.send(Message::text(hello.to_string())) {
+    // The Chrome running now — or one started again, if it was closed since.
+    let running = browser.and_then(|b| match b.ensure() {
+        Ok((port, ws, _)) => Some((port, ws)),
+        Err(e) => {
+            say(&format!("the browser could not start: {e}"));
+            None
+        }
+    });
+    let offers = Offers { browser: setup.offers.browser && running.is_some(), ..setup.offers };
+    if let Err(e) = server.send(Message::text(hello(setup, offers, running).to_string())) {
         return Ended::Lost(e.to_string());
     }
     say(&format!(
@@ -310,9 +357,26 @@ pub fn bridge(setup: &Setup, chrome: Option<&Chrome>, stop: &AtomicBool, say: &d
                         channels.insert(ch, tx);
                         let out = to_server.clone();
                         let frame = frame.clone();
-                        let port = chrome.map(|c| c.port).unwrap_or(0);
+                        let lent = browser.cloned();
+                        let again = setup.clone();
                         thread::spawn(move || match frame.get("kind").and_then(Value::as_str) {
-                            Some("cdp") => cdp(ch, port, frame.get("path").and_then(Value::as_str).unwrap_or(""), rx, out),
+                            Some("cdp") => {
+                                // Closed since? Started again, and Argus told its new address.
+                                let Some(b) = lent else { return };
+                                match b.ensure() {
+                                    Ok((port, ws, restarted)) => {
+                                        if restarted {
+                                            let _ = out.send(hello(&again, offers, Some((port, ws.clone()))));
+                                        }
+                                        let asked = frame.get("path").and_then(Value::as_str).unwrap_or("");
+                                        let path = if asked.starts_with("/devtools/browser/") { ws.as_str() } else { asked };
+                                        cdp(ch, port, path, rx, out)
+                                    }
+                                    Err(e) => {
+                                        let _ = out.send(json!({"op": "close", "ch": ch, "why": format!("the browser did not start again: {e}")}));
+                                    }
+                                }
+                            }
                             Some("pty") => terminal(ch, &frame, rx, out),
                             _ => run(ch, &frame, rx, out),
                         });
@@ -370,10 +434,10 @@ pub fn bridge(setup: &Setup, chrome: Option<&Chrome>, stop: &AtomicBool, say: &d
 }
 
 /// Connect until disconnected in Argus or stopped here: made again when the connection drops.
-pub fn keep(setup: &Setup, chrome: Option<&Chrome>, stop: &AtomicBool, say: &dyn Fn(&str)) -> Ended {
+pub fn keep(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, say: &dyn Fn(&str)) -> Ended {
     let mut wait = Duration::from_secs(1);
     loop {
-        match bridge(setup, chrome, stop, say) {
+        match bridge(setup, browser, stop, say) {
             Ended::Lost(why) => {
                 say(&format!("connection to {} lost ({why}); trying again in {}s", setup.url, wait.as_secs()));
                 let until = Instant::now() + wait;
