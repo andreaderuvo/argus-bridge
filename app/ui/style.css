@@ -135,3 +135,9 @@ a.link:hover { text-decoration: underline; }
 .switch .sw b { color: var(--bright); font-weight: 600; }
 .switch .sw .hint { font-size: .8rem; }
 @media (prefers-reduced-motion: reduce) { .switch .knob, .switch .knob::after { transition: none; } }
+
+/* A newer version, ready: one line over everything, one press. */
+.updatebar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem 1rem;
+  padding: .7rem 1rem; border-radius: 11px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+.updatebar b { color: var(--bright); }

@@ -125,3 +125,19 @@ def test_this_computers_switches_and_connection(make_page):
     page.wait("window.__mock.calls.some(c => c[0] === 'machine_set' && c[1].actions === true && c[1].on === true)", what="actions on")
     page.click_text("Disconnect")
     page.wait("window.__mock.calls.some(c => c[0] === 'machine_set' && c[1].on === false)", what="off")
+
+
+def test_a_newer_version_is_one_press_away(make_page):
+    page = make_page("?update")
+    bar = "document.querySelector('.updatebar')"
+    page.wait(f"!!{bar}", what="the update offered")
+    assert "argus-sync 0.2.2 is ready" in page.eval(f"{bar}.textContent") and "you have 0.2.1" in page.eval(f"{bar}.textContent")
+    page.click(".updatebar button")
+    page.wait("window.__mock.calls.some(c => c[0] === 'update_now')", what="installed")
+    page.wait(f"!{bar}", what="gone once updated")
+
+
+def test_no_bar_when_this_is_the_newest(make_page):
+    page = make_page()
+    page.wait("!!document.querySelector('.card')")
+    assert page.eval("!document.querySelector('.updatebar')")

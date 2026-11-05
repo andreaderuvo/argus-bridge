@@ -102,7 +102,7 @@ function paint() {
   $('#pauseall').hidden = !snap.pairs.length;
   const main = $('#main');
   const keep = main.scrollTop;
-  main.replaceChildren(...[machineCard(), ...(snap.pairs.length ? snap.pairs.map(card) : [emptyState()])].filter(Boolean));
+  main.replaceChildren(...[updateBar(), machineCard(), ...(snap.pairs.length ? snap.pairs.map(card) : [emptyState()])].filter(Boolean));
   main.scrollTop = keep;
 }
 
@@ -216,6 +216,25 @@ function activity(p) {
   ]);
   d.ontoggle = () => (d.open ? open.add(p.id) : open.delete(p.id));
   return d;
+}
+
+// ------------------------------------------------------------------------------- a newer version
+
+/* Found on GitHub and signed by us (the app checks the signature): one press installs it and
+ * starts again — the folders and this computer's connection carry on as they were. */
+function updateBar() {
+  if (!snap.update) return null;
+  const go = el('button', { className: 'primary', type: 'button', textContent: t('Update and restart') });
+  go.onclick = async () => {
+    go.disabled = true;
+    go.textContent = t('Updating…');
+    try { await invoke('update_now'); } catch (e) { toast(explain(e)); go.disabled = false; go.textContent = t('Update and restart'); }
+  };
+  return el('div', { className: 'updatebar', role: 'status' }, [
+    el('span', {}, [el('b', { textContent: t('argus-sync {version} is ready', { version: snap.update }) }), ' ',
+      el('span', { className: 'hint', textContent: t('you have {version}', { version: snap.version }) })]),
+    go,
+  ]);
 }
 
 // ------------------------------------------------------------------------------- this computer

@@ -75,6 +75,9 @@ struct Snapshot {
     computer: String,
     /// This computer, connected to Argus (computer.rs): null when it never was.
     machine: Option<MachineView>,
+    /// This copy's version, and a newer one ready to install (null when this is the newest).
+    version: String,
+    update: Option<String>,
 }
 
 /// What the window shows of this computer's connection to Argus.
@@ -120,6 +123,8 @@ struct Shared {
     paused_all: Mutex<bool>,
     wake: Mutex<Option<mpsc::Sender<Wake>>>,
     machine: Mutex<Machine>,
+    /// A newer version found on GitHub (signed by us — the updater checks), ready to install.
+    update: Mutex<Option<String>>,
 }
 
 impl Shared {
@@ -145,6 +150,8 @@ fn snapshot(shared: &Shared) -> Snapshot {
         }).collect(),
         paused_all: *shared.paused_all.lock().unwrap(),
         computer: host_name(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        update: shared.update.lock().unwrap().clone(),
         machine: argus_sync_core::computer::Setup::load(&shared.dir).map(|setup| {
             let m = shared.machine.lock().unwrap();
             MachineView {
@@ -645,6 +652,35 @@ fn machine_forget(app: AppHandle, shared: tauri::State<Arc<Shared>>) -> Res<()> 
     Ok(())
 }
 
+// ------------------------------------------------------------------------------- updating itself
+
+const UPDATE_EVERY: Duration = Duration::from_secs(6 * 3600);
+
+/// Ask GitHub whether a newer version is out. The updater only accepts one signed by the key whose
+/// public half is in tauri.conf.json: a release nobody signed is never offered, let alone installed.
+async fn look_for_update(app: &AppHandle, shared: &Shared) {
+    use tauri_plugin_updater::UpdaterExt;
+    let found = match app.updater() {
+        Ok(u) => u.check().await.ok().flatten().map(|update| update.version),
+        Err(_) => None,
+    };
+    let changed = *shared.update.lock().unwrap() != found;
+    *shared.update.lock().unwrap() = found;
+    if changed {
+        publish(app, shared);
+    }
+}
+
+/// Install the newer version and start again with it: one press in the window, or the tray.
+#[tauri::command]
+async fn update_now(app: AppHandle) -> Res<()> {
+    use tauri_plugin_updater::UpdaterExt;
+    let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?
+        .ok_or_else(|| say("This is the newest version", &[]))?;
+    update.download_and_install(|_, _| {}, || {}).await.map_err(|e| say("The update did not install: {why}", &[("why", e.to_string())]))?;
+    app.restart();
+}
+
 // ----------------------------------------------------------------------------------------- app
 
 fn show(app: &AppHandle) {
@@ -673,6 +709,7 @@ pub fn run() {
         paused_all: Mutex::new(false),
         wake: Mutex::new(None),
         machine: Mutex::new(Machine::default()),
+        update: Mutex::new(None),
     });
     let for_instance = shared.clone();
     tauri::Builder::default()
@@ -683,11 +720,13 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .manage(shared.clone())
         .invoke_handler(tauri::generate_handler![
             get_snapshot, take_invite, inspect, connect, set_paused, pause_all, set_big, fetch, sync_now,
-            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget
+            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget, update_now
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -743,6 +782,12 @@ pub fn run() {
             std::thread::spawn(move || worker(handle, worker_shared, rx));
             // This computer's connection to Argus, as it was left: on, it connects again.
             start_machine(&machine_handle, &shared);
+            // A newer version, looked for at start and every six hours.
+            let (up_handle, up_shared) = (machine_handle.clone(), shared.clone());
+            std::thread::spawn(move || loop {
+                tauri::async_runtime::block_on(look_for_update(&up_handle, &up_shared));
+                std::thread::sleep(UPDATE_EVERY);
+            });
             Ok(())
         })
         // Closing the window keeps it syncing, in the menu bar / notification area.

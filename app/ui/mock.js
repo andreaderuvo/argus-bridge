@@ -6,6 +6,8 @@ const calls = [];
 const at = (m) => `2026-10-14 11:${String(m).padStart(2, '0')}:05`;
 let state = {
   computer: 'lap684',
+  version: '0.2.1',
+  update: q.has('update') ? '0.2.2' : null,
   machine: q.has('machine') ? { host: 'lab-server', name: 'lap684', offers: { browser: true, terminal: true, actions: false }, on: true, state: 'connected', message: '' } : null,
   paused_all: false,
   pairs: q.has('empty') ? [] : [
@@ -65,6 +67,7 @@ window.__TAURI__ = {
           break;
         case 'machine_set': state.machine = { ...state.machine, offers: { browser: args.browser, terminal: args.terminal, actions: args.actions }, on: args.on, state: args.on ? 'connected' : 'off' }; break;
         case 'machine_forget': state.machine = null; break;
+        case 'update_now': state.update = null; state.version = '0.2.2'; break;
         default: break;
       }
       setTimeout(() => emit('snapshot', structuredClone(state)));

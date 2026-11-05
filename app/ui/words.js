@@ -1,6 +1,12 @@
 // The words, in the four languages Argus speaks. English is the key; a missing translation falls
 // back to it. {name} holes are filled by t().
 const IT = {
+  'Update and restart': 'Aggiorna e riavvia',
+  'Updating…': 'Aggiornamento…',
+  'argus-sync {version} is ready': 'argus-sync {version} è pronto',
+  'you have {version}': 'hai la {version}',
+  'This is the newest version': 'Questa è la versione più recente',
+  'The update did not install: {why}': 'L’aggiornamento non si è installato: {why}',
   'Browser': 'Browser',
   'Terminal': 'Terminale',
   'Actions': 'Azioni',
@@ -117,6 +123,12 @@ const IT = {
   'New folder here': 'Nuova cartella qui', 'New folder on the server': 'Nuova cartella sul server', 'Conflict': 'Conflitto', 'Later': 'Più tardi',
 };
 const ES = {
+  'Update and restart': 'Actualizar y reiniciar',
+  'Updating…': 'Actualizando…',
+  'argus-sync {version} is ready': 'argus-sync {version} está listo',
+  'you have {version}': 'tienes la {version}',
+  'This is the newest version': 'Esta es la versión más reciente',
+  'The update did not install: {why}': 'La actualización no se instaló: {why}',
   'Browser': 'Navegador',
   'Terminal': 'Terminal',
   'Actions': 'Acciones',
@@ -195,6 +207,12 @@ const ES = {
   'New folder here': 'Carpeta nueva aquí', 'New folder on the server': 'Carpeta nueva en el servidor', 'Conflict': 'Conflicto', 'Later': 'Más tarde',
 };
 const FR = {
+  'Update and restart': 'Mettre à jour et redémarrer',
+  'Updating…': 'Mise à jour…',
+  'argus-sync {version} is ready': 'argus-sync {version} est prêt',
+  'you have {version}': 'vous avez la {version}',
+  'This is the newest version': 'C’est la version la plus récente',
+  'The update did not install: {why}': 'La mise à jour ne s’est pas installée : {why}',
   'Browser': 'Navigateur',
   'Terminal': 'Terminal',
   'Actions': 'Actions',
