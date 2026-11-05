@@ -61,12 +61,14 @@ fn start() -> Option<Argus> {
         .env("HOME", &home)
         .env_remove("TMUX").env_remove("TMUX_PANE")
         .env("ARGUS_OLD_TOOLS", "off")
-        .stdout(Stdio::null()).stderr(Stdio::null())
+        .stdout(Stdio::null()).stderr(fs::File::create(conf.join("argus.log")).unwrap())
         .spawn().expect("python3");
     let url = format!("http://127.0.0.1:{port}");
     let t0 = Instant::now();
     while ureq::get(&format!("{url}/")).call().is_err() {
-        assert!(t0.elapsed() < Duration::from_secs(30), "Argus did not start");
+        // What it said, when it did not start: a missing package reads very differently from a slow runner.
+        assert!(t0.elapsed() < Duration::from_secs(30), "Argus did not start:\n{}",
+                fs::read_to_string(conf.join("argus.log")).unwrap_or_default());
         std::thread::sleep(Duration::from_millis(200));
     }
     Some(Argus { child, url, root, conf, _tmp: tmp })
