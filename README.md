@@ -12,6 +12,22 @@ disk: they open with a double-click, work offline, and what you change goes back
   a delete goes to the trash (yours, or Argus's); a file over the size limit (500 MB by default) waits
   to be asked for.
 
+## This computer, connected to Argus
+
+Besides folders, argus-sync can connect the computer it runs on to an Argus server — with no SSH
+and nothing listening here: one WebSocket from here to Argus, the road the sync already takes.
+What it lends is three switches, **all off until you turn them on**:
+
+- **Browser** — a Chrome of its own (its own profile: none of your sessions), driven by the
+  agents on the server through an address only they are given.
+- **Terminal** — a shell on this computer, in a window of Argus, for you.
+- **Actions** — a command an agent asks to run here; each one is put to you in Argus as Do it /
+  No, and its output goes back to the agent.
+
+In Argus: Settings → Computers → *Connect a computer…* gives an `argus-sync://computer?…` link;
+open it here. From a terminal: `argus-sync computer '<link>' --browser --terminal --actions`.
+Disconnecting in Argus closes everything this computer lent.
+
 ## Cross-OS, by design
 
 | | handled |
