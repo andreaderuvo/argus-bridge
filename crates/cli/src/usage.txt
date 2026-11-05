@@ -8,3 +8,6 @@ argus-sync — a folder of an Argus server, kept in sync with a folder on this c
   argus-sync fetch <name> <path>  bring a file over the size limit
   argus-sync pause|resume <name>
   argus-sync forget <name>        stop syncing it (the files stay, on both sides)
+  argus-sync browser ['<link from Argus>'] [--headless] [--chrome <path>]
+      Lend this computer's Chrome (a profile of its own) to the server's agents, until given back.
+      In Argus: Settings → Agents → Lend your browser gives the link; later, the link is remembered.

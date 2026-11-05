@@ -17,6 +17,7 @@ urlencoding = "2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 dirs = "5"
 rand = "0.8"
+tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 
 [dev-dependencies]
 tempfile = "3"
