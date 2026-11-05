@@ -17,6 +17,10 @@ const PATHS = {
   plus: 'M12 5v14M5 12h14',
   later: 'M12 7v5l3 2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z',
   folder: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',
+  screen: 'M3 5h18v12H3zM8 21h8M12 17v4',
+  globe: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z',
+  terminal: 'M4 5h16v14H4zM7.5 10l2.5 2-2.5 2M12.5 14h4',
+  play: 'M8 5.5v13l10.5-6.5z',
 };
 function icon(name) {
   const ns = 'http://www.w3.org/2000/svg';
@@ -98,13 +102,13 @@ function paint() {
   $('#pauseall').hidden = !snap.pairs.length;
   const main = $('#main');
   const keep = main.scrollTop;
-  main.replaceChildren(...(snap.pairs.length ? snap.pairs.map(card) : [emptyState()]));
+  main.replaceChildren(...[machineCard(), ...(snap.pairs.length ? snap.pairs.map(card) : [emptyState()])].filter(Boolean));
   main.scrollTop = keep;
 }
 
 function emptyState() {
   const input = el('input', { type: 'text', placeholder: 'argus-sync://pair?…', spellcheck: false });
-  const go = el('button', { className: 'primary', type: 'button', textContent: t('Continue'), onclick: () => connectSheet(input.value) });
+  const go = el('button', { className: 'primary', type: 'button', textContent: t('Continue'), onclick: () => takeLink(input.value) });
   input.onkeydown = (e) => { if (e.key === 'Enter') go.click(); };
   return el('section', { className: 'empty' }, [
     el('h1', { textContent: t('No folder connected yet') }),
@@ -213,6 +217,85 @@ function activity(p) {
   d.ontoggle = () => (d.open ? open.add(p.id) : open.delete(p.id));
   return d;
 }
+
+// ------------------------------------------------------------------------------- this computer
+
+/* This computer, connected to an Argus server: what it lends, each one a switch, all off until
+ * turned on — its browser (a Chrome of its own, for the agents there), a terminal (a shell here, in
+ * a window of Argus), actions (a command an agent asks, which you allow in Argus). */
+const SWITCHES = () => [
+  ['browser', icon('globe'), t('Browser'), t('A Chrome of its own (none of your sessions), for the agents on the server')],
+  ['terminal', icon('terminal'), t('Terminal'), t('A shell on this computer, in a window of Argus — for you')],
+  ['actions', icon('play'), t('Actions'), t('A command an agent asks to run here — each one allowed by you, in Argus')],
+];
+const MACHINE = {
+  connected: ['Connected', 'ok'], connecting: ['Connecting…', 'busy'], lost: ['Cannot reach the server', 'bad'],
+  off: ['Off', ''], 'given-back': ['Disconnected in Argus', 'warn'],
+};
+
+function switches(offers, onChange) {
+  return el('div', { className: 'switches' }, SWITCHES().map(([key, glyph, word, hint]) => {
+    const box = el('input', { type: 'checkbox', checked: !!offers[key], onchange: () => onChange({ ...offers, [key]: box.checked }) });
+    const row = el('label', { className: 'switch' }, [box, el('span', { className: 'knob' }), glyph,
+      el('span', { className: 'sw' }, [el('b', { textContent: word }), el('span', { className: 'hint', textContent: hint })])]);
+    row.dataset.offer = key;
+    return row;
+  }));
+}
+
+function machineCard() {
+  const m = snap.machine;
+  if (!m) return null;
+  const [label, tone] = MACHINE[m.state] || MACHINE.connecting;
+  const set = (offers, on = m.on) => run('machine_set', { ...offers, on });
+  const toggle = el('button', { className: 'small', type: 'button', textContent: m.on ? t('Disconnect') : t('Connect'),
+    onclick: () => set(m.offers, !m.on) });
+  const forget = el('button', { className: 'small danger', type: 'button', textContent: t('Forget…'), onclick: () => sheet(
+    t('Forget the connection to {host}?', { host: m.host }),
+    [el('p', { textContent: t('This computer stops lending anything. To connect it again, make a new link in Argus.') })],
+    [el('button', { type: 'button', textContent: t('Cancel'), onclick: shut }),
+      el('button', { className: 'danger', type: 'button', textContent: t('Forget'), onclick: async () => { await run('machine_forget'); shut(); } })]) });
+  const card = el('article', { className: 'card machine' }, [
+    el('div', { className: 'cardhead' }, [
+      el('span', { className: `dot ${m.state === 'connected' ? 'idle' : m.state === 'lost' ? 'offline' : m.state === 'connecting' ? 'syncing' : 'paused'}` }),
+      icon('screen'),
+      el('span', { className: 'name', textContent: t('This computer') }),
+      el('span', { className: 'server', textContent: t('on {host}', { host: m.host }) }),
+      el('span', { className: `chip ${tone}`, textContent: t(label) }),
+    ]),
+    m.message ? el('div', { className: 'line bad', textContent: explain(m.message) }) : null,
+    switches(m.offers, (offers) => set(offers)),
+    el('div', { className: 'acts' }, [toggle, forget]),
+  ]);
+  return card;
+}
+
+/** A link from Argus to connect this computer: what it will lend, chosen before anything goes. */
+function machineSheet(link) {
+  let offers = { browser: false, terminal: false, actions: false };
+  let host = '';
+  try { host = new URL(decodeURIComponent((link.match(/url=([^&]+)/) || [])[1] || '')).hostname; } catch { /* said below */ }
+  const go = el('button', { className: 'primary', type: 'button', textContent: t('Connect') });
+  const box = sheet(t('Connect this computer to {host}?', { host: host || 'Argus' }), [
+    el('p', { textContent: t('Nothing listens on this computer and nothing goes over SSH: it connects to Argus, the way the folders do. Choose what it lends — everything is off until you switch it on, and you can change it later.') }),
+    switches(offers, (o) => { offers = o; }),
+  ], [el('button', { type: 'button', textContent: t('Cancel'), onclick: shut }), go]);
+  // The switches in a sheet keep their own state: read it back when Connect is pressed.
+  go.onclick = async () => {
+    for (const row of box.querySelectorAll('.switch')) offers[row.dataset.offer] = row.querySelector('input').checked;
+    go.disabled = true;
+    try {
+      await invoke('machine_link', { link, ...offers });
+      shut();
+      toast(t('Connecting to {host}…', { host }));
+    } catch (e) {
+      toast(explain(e));
+      go.disabled = false;
+    }
+  };
+}
+
+const takeLink = (link) => (/^argus-sync:\/\/computer/.test(String(link)) || /[?&]key=ac_/.test(String(link)) ? machineSheet(link) : connectSheet(link));
 
 // ---------------------------------------------------------------------------------- menus, sheets
 
@@ -335,8 +418,8 @@ async function moveIt(p) {
 $('#add').onclick = () => connectSheet();
 $('#pauseall').onclick = () => run('pause_all', { paused: !snap.paused_all });
 listen('snapshot', (e) => { snap = e.payload; paint(); });
-listen('invite', (e) => connectSheet(e.payload));
+listen('invite', (e) => takeLink(e.payload));
 snap = await invoke('get_snapshot');
 paint();
 const pending = await invoke('take_invite');
-if (pending) connectSheet(pending);
+if (pending) takeLink(pending);

@@ -96,3 +96,32 @@ def test_open_asks_the_app_for_the_folder_by_id(make_page):
     calls = page.eval("JSON.stringify(window.__mock.calls.filter(c => c[0] === 'open_in'))")
     assert calls == '[["open_in",{"id":"a1","rel":null}],["open_in",{"id":"a1","rel":"tables/summary (conflict from lap684 2026-10-14 1128).xlsx"}]]', calls
     assert "plugin:opener" not in (page.eval("fetch('app.js').then(r => r.text())"))
+
+
+def test_a_link_to_connect_this_computer_asks_what_it_lends_all_off(make_page):
+    """argus-sync://computer?… opens a sheet of its own: three switches, off until switched on."""
+    page = make_page("?empty")
+    page.click("#main input")
+    page.type("argus-sync://computer?url=http%3A%2F%2Flab-server%3A8090&key=ac_x&name=lap684")
+    page.click_text("Continue")
+    page.wait("!!document.querySelector('#sheet .switch')", what="the switches")
+    assert page.eval("[...document.querySelectorAll('#sheet .switch input')].map(i => i.checked).join()") == "false,false,false"
+    assert "lab-server" in page.text("#sheet h2")
+    page.click("#sheet .switch[data-offer=\"terminal\"]")
+    assert page.eval("document.querySelector('#sheet .switch[data-offer=\"terminal\"] input').checked"), "switched on"
+    page.click("#sheet .foot .primary")
+    page.wait("!!document.querySelector('.card.machine')", what="this computer's card")
+    calls = page.eval("JSON.stringify(window.__mock.calls)")
+    assert '"machine_link",{"link":"argus-sync://computer?url=http%3A%2F%2Flab-server%3A8090&key=ac_x&name=lap684","browser":false,"terminal":true,"actions":false}' in calls, calls
+
+
+def test_this_computers_switches_and_connection(make_page):
+    page = make_page("?machine")
+    card = "document.querySelector('.card.machine')"
+    page.wait(f"!!{card}", what="this computer")
+    assert "Connected" in page.eval(f"{card}.textContent") and "on lab-server" in page.eval(f"{card}.textContent")
+    assert page.eval(f"[...{card}.querySelectorAll('.switch input')].map(i => i.checked).join()") == "true,true,false"
+    page.click(".card.machine .switch[data-offer=\"actions\"]")
+    page.wait("window.__mock.calls.some(c => c[0] === 'machine_set' && c[1].actions === true && c[1].on === true)", what="actions on")
+    page.click_text("Disconnect")
+    page.wait("window.__mock.calls.some(c => c[0] === 'machine_set' && c[1].on === false)", what="off")

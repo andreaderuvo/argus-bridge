@@ -6,6 +6,7 @@ const calls = [];
 const at = (m) => `2026-10-14 11:${String(m).padStart(2, '0')}:05`;
 let state = {
   computer: 'lap684',
+  machine: q.has('machine') ? { host: 'lab-server', name: 'lap684', offers: { browser: true, terminal: true, actions: false }, on: true, state: 'connected', message: '' } : null,
   paused_all: false,
   pairs: q.has('empty') ? [] : [
     {
@@ -59,6 +60,11 @@ window.__TAURI__ = {
         case 'disconnect': state.pairs = state.pairs.filter((p) => p.id !== args.id); break;
         case 'move_local': find(args.id).local = args.to; break;
         case 'plugin:dialog|open': return '/Users/sam/Desktop/chosen';
+        case 'machine_link':
+          state.machine = { host: 'lab-server', name: 'lap684', offers: { browser: args.browser, terminal: args.terminal, actions: args.actions }, on: true, state: 'connecting', message: '' };
+          break;
+        case 'machine_set': state.machine = { ...state.machine, offers: { browser: args.browser, terminal: args.terminal, actions: args.actions }, on: args.on, state: args.on ? 'connected' : 'off' }; break;
+        case 'machine_forget': state.machine = null; break;
         default: break;
       }
       setTimeout(() => emit('snapshot', structuredClone(state)));

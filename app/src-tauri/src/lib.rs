@@ -73,6 +73,28 @@ struct Snapshot {
     pairs: Vec<PairView>,
     paused_all: bool,
     computer: String,
+    /// This computer, connected to Argus (computer.rs): null when it never was.
+    machine: Option<MachineView>,
+}
+
+/// What the window shows of this computer's connection to Argus.
+#[derive(Debug, Clone, Serialize)]
+struct MachineView {
+    host: String,
+    name: String,
+    offers: argus_sync_core::computer::Offers,
+    on: bool,
+    /// off | connecting | connected | lost | given-back
+    state: String,
+    message: String,
+}
+
+/// The connection's own state, kept between its thread and the window.
+#[derive(Default)]
+struct Machine {
+    state: String,
+    message: String,
+    stop: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -97,6 +119,7 @@ struct Shared {
     invite: Mutex<Option<String>>,
     paused_all: Mutex<bool>,
     wake: Mutex<Option<mpsc::Sender<Wake>>>,
+    machine: Mutex<Machine>,
 }
 
 impl Shared {
@@ -122,6 +145,14 @@ fn snapshot(shared: &Shared) -> Snapshot {
         }).collect(),
         paused_all: *shared.paused_all.lock().unwrap(),
         computer: host_name(),
+        machine: argus_sync_core::computer::Setup::load(&shared.dir).map(|setup| {
+            let m = shared.machine.lock().unwrap();
+            MachineView {
+                host: host_of(&setup.url), name: setup.name, offers: setup.offers, on: setup.on,
+                state: if m.state.is_empty() { if setup.on { "connecting".into() } else { "off".into() } } else { m.state.clone() },
+                message: m.message.clone(),
+            }
+        }),
     }
 }
 
@@ -503,6 +534,117 @@ fn open_in(app: AppHandle, shared: tauri::State<Arc<Shared>>, id: String, rel: O
     app.opener().open_path(path.to_string_lossy(), None::<&str>).map_err(|e| say("Something went wrong: {why}", &[("why", e.to_string())]))
 }
 
+// ------------------------------------------------------------------------------- this computer
+
+/// (Re)start this computer's connection to Argus as its setup says: stopped first, then — when it
+/// is on — a Chrome of its own if the browser is lent, and the bridge, made again when it drops.
+fn start_machine(app: &AppHandle, shared: &Arc<Shared>) {
+    use argus_sync_core::computer::{self, Ended, Setup};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    if let Some(stop) = shared.machine.lock().unwrap().stop.take() {
+        stop.store(true, Ordering::Relaxed);
+    }
+    let Some(setup) = Setup::load(&shared.dir) else {
+        *shared.machine.lock().unwrap() = Machine::default();
+        publish(app, shared);
+        return;
+    };
+    if !setup.on {
+        *shared.machine.lock().unwrap() = Machine { state: "off".into(), ..Default::default() };
+        publish(app, shared);
+        return;
+    }
+    let stop = Arc::new(AtomicBool::new(false));
+    *shared.machine.lock().unwrap() = Machine { state: "connecting".into(), message: String::new(), stop: Some(stop.clone()) };
+    publish(app, shared);
+    let (app, shared) = (app.clone(), shared.clone());
+    std::thread::spawn(move || {
+        let set = |state: &str, message: String| {
+            let mut m = shared.machine.lock().unwrap();
+            if m.stop.as_ref().map(|s| Arc::ptr_eq(s, &stop)).unwrap_or(false) {
+                m.state = state.into();
+                m.message = message;
+            }
+            drop(m);
+            publish(&app, &shared);
+        };
+        let chrome = if setup.offers.browser {
+            match computer::find_chrome() {
+                None => {
+                    set("connecting", say("No Chrome here: the browser is not lent (install Chrome, or switch Browser off)", &[]));
+                    None
+                }
+                Some(exe) => match computer::start_chrome(&exe, &shared.dir.join("browser-profile"), &[]) {
+                    Ok(c) => Some(c),
+                    Err(e) => {
+                        set("connecting", say("Chrome did not start: {why}", &[("why", e.to_string())]));
+                        None
+                    }
+                },
+            }
+        } else {
+            None
+        };
+        let said = |line: &str| {
+            if line.starts_with("connected to") {
+                set("connected", String::new());
+            } else if line.starts_with("connection to") {
+                set("lost", line.to_string());
+            }
+        };
+        match computer::keep(&setup, chrome.as_ref(), &stop, &said) {
+            Ended::GivenBack => {
+                // Disconnected in Argus: off here too, until switched on again.
+                let mut off = setup.clone();
+                off.on = false;
+                let _ = off.save(&shared.dir);
+                set("given-back", String::new());
+            }
+            Ended::Stopped => {}
+            Ended::Lost(why) => set("lost", why),
+        }
+        drop(chrome);
+    });
+}
+
+/// A link from Argus to connect this computer: kept, with every switch off until you turn it on.
+#[tauri::command]
+fn machine_link(app: AppHandle, shared: tauri::State<Arc<Shared>>, link: String, browser: bool, terminal: bool, actions: bool) -> Res<()> {
+    use argus_sync_core::computer::{self, Offers, Setup};
+    let invite = computer::parse_link(&link).ok_or_else(|| say("That is not a link from Argus to connect a computer", &[]))?;
+    let setup = Setup {
+        url: invite.url, key: invite.key, name: if invite.name.is_empty() { host_name() } else { invite.name },
+        offers: Offers { browser, terminal, actions }, on: true,
+    };
+    setup.save(&shared.dir).map_err(|e| e.to_string())?;
+    start_machine(&app, shared.inner());
+    Ok(())
+}
+
+/// The switches, and whether it is connected at all.
+#[tauri::command]
+fn machine_set(app: AppHandle, shared: tauri::State<Arc<Shared>>, browser: bool, terminal: bool, actions: bool, on: bool) -> Res<()> {
+    use argus_sync_core::computer::{Offers, Setup};
+    let mut setup = Setup::load(&shared.dir).ok_or_else(|| say("This computer is not connected to Argus", &[]))?;
+    setup.offers = Offers { browser, terminal, actions };
+    setup.on = on;
+    setup.save(&shared.dir).map_err(|e| e.to_string())?;
+    start_machine(&app, shared.inner());
+    Ok(())
+}
+
+/// Forget the connection here (Argus keeps the computer listed until it is forgotten there too).
+#[tauri::command]
+fn machine_forget(app: AppHandle, shared: tauri::State<Arc<Shared>>) -> Res<()> {
+    use argus_sync_core::computer::Setup;
+    if let Some(stop) = shared.machine.lock().unwrap().stop.take() {
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    Setup::forget(&shared.dir).map_err(|e| e.to_string())?;
+    start_machine(&app, shared.inner());
+    Ok(())
+}
+
 // ----------------------------------------------------------------------------------------- app
 
 fn show(app: &AppHandle) {
@@ -516,6 +658,7 @@ fn show(app: &AppHandle) {
 fn take_links(app: &AppHandle, shared: &Shared, urls: Vec<String>) {
     for url in urls.into_iter().filter(|u| u.starts_with("argus-sync:")) {
         *shared.invite.lock().unwrap() = Some(url.clone());
+        // A computer's link and a folder's look alike to the system; the window tells them apart.
         let _ = app.emit("invite", url);
     }
     show(app);
@@ -529,6 +672,7 @@ pub fn run() {
         invite: Mutex::new(None),
         paused_all: Mutex::new(false),
         wake: Mutex::new(None),
+        machine: Mutex::new(Machine::default()),
     });
     let for_instance = shared.clone();
     tauri::Builder::default()
@@ -543,7 +687,7 @@ pub fn run() {
         .manage(shared.clone())
         .invoke_handler(tauri::generate_handler![
             get_snapshot, take_invite, inspect, connect, set_paused, pause_all, set_big, fetch, sync_now,
-            disconnect, move_local, resolve, open_in
+            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -595,7 +739,10 @@ pub fn run() {
             let (tx, rx) = mpsc::channel();
             *shared.wake.lock().unwrap() = Some(tx);
             let worker_shared = shared.clone();
+            let machine_handle = handle.clone();
             std::thread::spawn(move || worker(handle, worker_shared, rx));
+            // This computer's connection to Argus, as it was left: on, it connects again.
+            start_machine(&machine_handle, &shared);
             Ok(())
         })
         // Closing the window keeps it syncing, in the menu bar / notification area.
