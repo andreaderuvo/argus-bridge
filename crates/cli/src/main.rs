@@ -6,7 +6,7 @@
 //!     argus-sync once             # one round, then exits
 //!     argus-sync fetch <name> <path>   # a big file, asked for
 //!     argus-sync pause|resume|forget <name>
-//!     argus-sync browser ['<link from Argus>']   # lend this computer's Chrome to the server's agents
+//!     argus-sync computer ['<link from Argus>'] [--browser] [--terminal] [--actions]
 
 use argus_sync_core::engine::{host_name, Engine, Event, Settings};
 use argus_sync_core::pair::{self, Pair, Pairs};
@@ -35,7 +35,7 @@ fn main() -> ExitCode {
         Some("pause") if args.len() == 2 => edit(&dir, &args[1], |p| p.paused = true),
         Some("resume") if args.len() == 2 => edit(&dir, &args[1], |p| p.paused = false),
         Some("forget") if args.len() == 2 => forget(&dir, &args[1]),
-        Some("browser") => browser(&dir, &args[1..]),
+        Some("computer") => computer(&dir, &args[1..]),
         _ => {
             eprintln!("{}", include_str!("usage.txt"));
             return ExitCode::from(2);
@@ -191,33 +191,47 @@ fn run(dir: &PathBuf, once: bool) -> Res {
     }
 }
 
-/// Lend this computer's Chrome to the agents of an Argus server, until it is given back there.
-fn browser(dir: &PathBuf, args: &[String]) -> Res {
-    use argus_sync_core::browser;
-    let headless = args.iter().any(|a| a == "--headless");
-    let chrome = args.iter().position(|a| a == "--chrome").and_then(|i| args.get(i + 1)).map(PathBuf::from);
-    let link = args.iter().find(|a| !a.starts_with("--") && Some(PathBuf::from(a.as_str())) != chrome);
-    let lend = match link {
-        Some(text) => {
-            let lend = browser::parse_link(text).ok_or("that is not a browser link from Argus (argus-sync://browser?url=…&key=ab_…)")?;
-            browser::save(dir, text).map_err(|e| e.to_string())?;
-            lend
-        }
-        None => browser::saved(dir).ok_or("no browser link yet — in Argus: Settings → Agents → Lend your browser")?,
-    };
-    let exe = chrome.or_else(browser::find_chrome).ok_or("no Chrome found here (or say where: --chrome <path>)")?;
-    let mut extra: Vec<String> = Vec::new();
-    if headless {
-        extra.extend(["--headless=new".into(), "--no-sandbox".into(), "--disable-gpu".into()]);
+/// Connect this computer to an Argus server: what it lends is what the switches say.
+fn computer(dir: &PathBuf, args: &[String]) -> Res {
+    use argus_sync_core::computer::{self, Ended, Offers, Setup};
+    let flag = |f: &str| args.iter().any(|a| a == f);
+    let chrome_at = args.iter().position(|a| a == "--chrome").and_then(|i| args.get(i + 1)).map(PathBuf::from);
+    let link = args.iter().enumerate().find(|(i, a)| !a.starts_with("--") && args.get(i.wrapping_sub(1)).map(String::as_str) != Some("--chrome")).map(|(_, a)| a);
+    if flag("--forget") {
+        Setup::forget(dir).map_err(|e| e.to_string())?;
+        println!("forgotten here (in Argus, Settings → Computers → Forget takes its key back)");
+        return Ok(());
     }
-    let started = browser::start_chrome(&exe, &dir.join("browser-profile"), &extra).map_err(|e| e.to_string())?;
-    println!("Chrome started for {} ({})", lend.url, browser::version(started.port));
+    let mut setup = match link {
+        Some(text) => {
+            let invite = computer::parse_link(text).ok_or("that is not a link from Argus to connect a computer (argus-sync://computer?url=…&key=ac_…)")?;
+            Setup { url: invite.url, key: invite.key, name: if invite.name.is_empty() { argus_sync_core::engine::host_name() } else { invite.name },
+                    offers: Offers::default(), on: true }
+        }
+        None => Setup::load(dir).ok_or("not connected yet — in Argus: Settings → Computers → Connect this computer")?,
+    };
+    // The switches: given on the command line, they are what this computer lends from now on.
+    if flag("--browser") || flag("--terminal") || flag("--actions") || flag("--nothing") {
+        setup.offers = Offers { browser: flag("--browser"), terminal: flag("--terminal"), actions: flag("--actions") };
+    }
+    setup.save(dir).map_err(|e| e.to_string())?;
+    let chrome = if setup.offers.browser {
+        let exe = chrome_at.or_else(computer::find_chrome).ok_or("no Chrome found here (say where: --chrome <path>, or leave out --browser)")?;
+        let mut extra: Vec<String> = Vec::new();
+        if flag("--headless") {
+            extra.extend(["--headless=new".into(), "--no-sandbox".into(), "--disable-gpu".into()]);
+        }
+        let started = computer::start_chrome(&exe, &dir.join("browser-profile"), &extra).map_err(|e| e.to_string())?;
+        println!("Chrome started, with a profile of its own ({})", computer::version(started.port));
+        Some(started)
+    } else {
+        None
+    };
     let stop = std::sync::atomic::AtomicBool::new(false);
-    let ended = browser::lend(&lend, &started, &stop, &|said| println!("{said}"));
-    match ended {
-        browser::Ended::GivenBack => println!("given back in Argus: this Chrome closes"),
-        browser::Ended::Stopped => println!("stopped"),
-        browser::Ended::Lost(why) => return Err(why),
+    match computer::keep(&setup, chrome.as_ref(), &stop, &|said| println!("{said}")) {
+        Ended::GivenBack => println!("disconnected in Argus: what this computer lent is closed"),
+        Ended::Stopped => println!("stopped"),
+        Ended::Lost(why) => return Err(why),
     }
     Ok(())
 }
