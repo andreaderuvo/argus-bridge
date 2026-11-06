@@ -39,7 +39,7 @@ def test_connecting_from_a_pasted_link(make_page):
     page.click_text("Continue")
     page.wait("!!document.querySelector('.found')", what="what the link opens, asked of the server")
     assert "wgs-batch-12 on lab-server" in page.text(".found") and "both ways" in page.text(".found")
-    assert page.eval("document.querySelector('.box label + .found + label input').value") == "/Users/sam/argus-sync/wgs-batch-12"
+    assert page.eval("document.querySelector('.box label + .found + label input').value") == "/Users/sam/argus-bridge/wgs-batch-12"
     page.click_text("Choose…", within=".box button")
     page.wait("document.querySelector('.box label + .found + label input').value === '/Users/sam/Desktop/chosen'")
     page.click_text("Connect", within=".box button")
@@ -131,7 +131,7 @@ def test_a_newer_version_is_one_press_away(make_page):
     page = make_page("?update")
     bar = "document.querySelector('.updatebar')"
     page.wait(f"!!{bar}", what="the update offered")
-    assert "argus-sync 0.1.2 is ready" in page.eval(f"{bar}.textContent") and "you have 0.1.1" in page.eval(f"{bar}.textContent")
+    assert "argus-bridge 0.1.2 is ready" in page.eval(f"{bar}.textContent") and "you have 0.1.1" in page.eval(f"{bar}.textContent")
     page.click(".updatebar button")
     page.wait("window.__mock.calls.some(c => c[0] === 'update_now')", what="installed")
     page.wait(f"!{bar}", what="gone once updated")

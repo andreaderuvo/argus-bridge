@@ -1,17 +1,17 @@
-argus-sync — a folder of an Argus server, kept in sync with a folder on this computer
+argus-bridge — a folder of an Argus server, kept in sync with a folder on this computer
 
-  argus-sync connect '<link from Argus>' <folder here>
+  argus-bridge connect '<link from Argus>' <folder here>
       In Argus: a folder's menu → Sync to your computer… gives the link.
-  argus-sync list                 the folders connected
-  argus-sync run                  keep them all in sync, until stopped (Ctrl-C)
-  argus-sync once                 one round, then exit
-  argus-sync fetch <name> <path>  bring a file over the size limit
-  argus-sync pause|resume <name>
-  argus-sync forget <name>        stop syncing it (the files stay, on both sides)
-  argus-sync computer ['<link from Argus>'] [--browser] [--terminal] [--actions] [--nothing]
+  argus-bridge list                 the folders connected
+  argus-bridge run                  keep them all in sync, until stopped (Ctrl-C)
+  argus-bridge once                 one round, then exit
+  argus-bridge fetch <name> <path>  bring a file over the size limit
+  argus-bridge pause|resume <name>
+  argus-bridge forget <name>        stop syncing it (the files stay, on both sides)
+  argus-bridge computer ['<link from Argus>'] [--browser] [--terminal] [--actions] [--nothing]
       Connect this computer to Argus, until disconnected there. What it lends is what you switch on,
       and nothing until you do: --browser (a Chrome of its own, for the server's agents), --terminal
       (a shell here, in a window of Argus), --actions (commands agents ask, each allowed by you in
-      Argus). Remembered: later, `argus-sync computer` alone. --headless, --chrome <path> for the
+      Argus). Remembered: later, `argus-bridge computer` alone. --headless, --chrome <path> for the
       browser; --forget to forget the connection here.
       In Argus: Settings → Computers → Connect this computer gives the link.

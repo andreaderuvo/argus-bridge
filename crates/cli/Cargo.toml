@@ -5,6 +5,11 @@ edition.workspace = true
 license.workspace = true
 
 [[bin]]
+name = "argus-bridge"
+path = "src/main.rs"
+
+# Its name before it was argus-bridge: scripts and habits that call it keep working.
+[[bin]]
 name = "argus-sync"
 path = "src/main.rs"
 

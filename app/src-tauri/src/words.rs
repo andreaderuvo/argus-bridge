@@ -11,7 +11,7 @@ fn lang() -> String {
 pub fn tr(key: &str) -> String {
     let table: &[(&str, &str, &str, &str)] = &[
         // English, Italiano, Español, Français
-        ("Open argus-sync", "Apri argus-sync", "Abrir argus-sync", "Ouvrir argus-sync"),
+        ("Open argus-bridge", "Apri argus-bridge", "Abrir argus-bridge", "Ouvrir argus-bridge"),
         ("Sync now", "Sincronizza ora", "Sincronizar ahora", "Synchroniser maintenant"),
         ("Quit", "Esci", "Salir", "Quitter"),
         ("Open Argus", "Apri Argus", "Abrir Argus", "Ouvrir Argus"),
@@ -19,12 +19,12 @@ pub fn tr(key: &str) -> String {
         ("{session} is waiting for you", "{session} ti aspetta", "{session} te espera", "{session} vous attend"),
         ("{session} failed", "{session} non è riuscito", "{session} falló", "{session} a échoué"),
         ("{session} has finished", "{session} ha finito", "{session} ha terminado", "{session} a terminé"),
-        ("argus-sync — nothing connected", "argus-sync — nessuna cartella collegata", "argus-sync — ninguna carpeta conectada", "argus-sync — aucun dossier connecté"),
-        ("argus-sync — paused", "argus-sync — in pausa", "argus-sync — en pausa", "argus-sync — en pause"),
-        ("argus-sync — {n} conflict(s) to look at", "argus-sync — {n} conflitti da guardare", "argus-sync — {n} conflictos por revisar", "argus-sync — {n} conflit(s) à regarder"),
-        ("argus-sync — {n} folder(s) cannot reach the server", "argus-sync — {n} cartelle non raggiungono il server", "argus-sync — {n} carpetas no llegan al servidor", "argus-sync — {n} dossier(s) n’atteignent pas le serveur"),
-        ("argus-sync — syncing…", "argus-sync — sincronizzazione…", "argus-sync — sincronizando…", "argus-sync — synchronisation…"),
-        ("argus-sync — up to date", "argus-sync — tutto aggiornato", "argus-sync — todo al día", "argus-sync — à jour"),
+        ("argus-bridge — nothing connected", "argus-bridge — nessuna cartella collegata", "argus-bridge — ninguna carpeta conectada", "argus-bridge — aucun dossier connecté"),
+        ("argus-bridge — paused", "argus-bridge — in pausa", "argus-bridge — en pausa", "argus-bridge — en pause"),
+        ("argus-bridge — {n} conflict(s) to look at", "argus-bridge — {n} conflitti da guardare", "argus-bridge — {n} conflictos por revisar", "argus-bridge — {n} conflit(s) à regarder"),
+        ("argus-bridge — {n} folder(s) cannot reach the server", "argus-bridge — {n} cartelle non raggiungono il server", "argus-bridge — {n} carpetas no llegan al servidor", "argus-bridge — {n} dossier(s) n’atteignent pas le serveur"),
+        ("argus-bridge — syncing…", "argus-bridge — sincronizzazione…", "argus-bridge — sincronizando…", "argus-bridge — synchronisation…"),
+        ("argus-bridge — up to date", "argus-bridge — tutto aggiornato", "argus-bridge — todo al día", "argus-bridge — à jour"),
     ];
     let col = match lang().as_str() { "it" => 1, "es" => 2, "fr" => 3, _ => 0 };
     table.iter().find(|row| row.0 == key).map(|row| [row.0, row.1, row.2, row.3][col]).unwrap_or(key).to_string()

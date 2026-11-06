@@ -1,7 +1,8 @@
 //! The folders this computer keeps in sync ("pairs"): which server, which key, where here.
 //!
 //! Kept in the user's config directory (`~/Library/Application Support/argus-sync` on a Mac,
-//! `%APPDATA%\argus-sync` on Windows, `~/.config/argus-sync` on Linux), readable by the user only
+//! `%APPDATA%\argus-sync` on Windows, `~/.config/argus-sync` on Linux — the name it had before it was
+//! argus-bridge, kept so that nothing set up is lost), readable by the user only
 //! where the system has such a thing. Each pair's state goes beside it, in its own file.
 
 use serde::{Deserialize, Serialize};

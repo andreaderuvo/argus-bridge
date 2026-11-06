@@ -1,9 +1,9 @@
 [package]
 name = "argus-sync-app"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 license = "MIT"
-description = "argus-sync: a folder of an Argus server, kept in sync with a folder on this computer"
+description = "argus-bridge: a folder of an Argus server, kept in sync with a folder on this computer"
 
 # Its own workspace: it needs the GUI toolkits of the system it is built on (WebKitGTK on Linux),
 # which the engine and the CLI do not.

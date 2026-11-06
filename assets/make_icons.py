@@ -1,7 +1,7 @@
-"""argus-sync's mark and icons, in the family's drawing.
+"""argus-bridge's mark and icons, in the family's drawing.
 
 Argus is an eye ringed by twelve teal dots, one of them amber at the upper right; Panoptes is the
-same eye in a grid of eight (the machines). argus-sync keeps the eye and the dots and turns them
+same eye in a grid of eight (the machines). argus-bridge keeps the eye and the dots and turns them
 into two arcs chasing each other round it — each dot bigger than the one before, so an arc reads as
 an arrow, and the two together as the sign for sync. The head of one arc is the amber dot, where
 Argus has its own.
@@ -42,7 +42,7 @@ def shapes(size: float, tile: bool):
 
 def svg(size: int, tile: bool) -> str:
     lines = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {size} {size}" width="{size}" height="{size}">',
-             "  <title>argus-sync</title>"]
+             "  <title>argus-bridge</title>"]
     if tile:
         lines.append(f'  <rect width="{size}" height="{size}" rx="{size * 0.2266:.0f}" fill="{TILE}"/>')
     lines += [f'  <circle cx="{x:.2f}" cy="{y:.2f}" r="{r:.2f}" fill="{col}"/>' for _k, x, y, r, col in shapes(size, tile)]

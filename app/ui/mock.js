@@ -12,7 +12,7 @@ let state = {
   paused_all: false,
   pairs: q.has('empty') ? [] : [
     {
-      id: 'a1', name: 'report-salmonella', url: 'http://lab-server:8090', host: 'lab-server', local: '/Users/sam/argus-sync/report-salmonella',
+      id: 'a1', name: 'report-salmonella', url: 'http://lab-server:8090', host: 'lab-server', local: '/Users/sam/argus-bridge/report-salmonella',
       paused: false, big_mb: 500,
       status: {
         state: 'idle', message: '', last_ok: at(32), write: true,
@@ -48,7 +48,7 @@ window.__TAURI__ = {
         case 'take_invite': return q.get('invite');
         case 'inspect':
           if (!String(args.link).startsWith('argus-sync://')) throw JSON.stringify({ say: 'That is not a link from Argus — it starts with argus-sync://', values: {} });
-          return { url: 'http://lab-server:8090', host: 'lab-server', name: 'wgs-batch-12', folder: 'wgs-batch-12', write: true, suggested: '/Users/sam/argus-sync/wgs-batch-12' };
+          return { url: 'http://lab-server:8090', host: 'lab-server', name: 'wgs-batch-12', folder: 'wgs-batch-12', write: true, suggested: '/Users/sam/argus-bridge/wgs-batch-12' };
         case 'connect':
           state.pairs.push({ id: `n${state.pairs.length}`, name: 'wgs-batch-12', url: 'http://lab-server:8090', host: 'lab-server', local: args.local, paused: false, big_mb: 500,
             status: { state: 'starting', message: '', last_ok: null, write: true, conflicts: [], big: [], notes: [], recent: [] } });

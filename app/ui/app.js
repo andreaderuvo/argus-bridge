@@ -1,4 +1,4 @@
-// argus-sync's window. Everything it shows comes from the app's "snapshot" (sent after every round
+// argus-bridge's window. Everything it shows comes from the app's "snapshot" (sent after every round
 // of every folder); everything it does is one command to the app. No framework, no build step.
 import { t, bytes } from './words.js';
 
@@ -235,7 +235,7 @@ function updateBar() {
     try { await invoke('update_now'); } catch (e) { toast(explain(e)); go.disabled = false; go.textContent = t('Update and restart'); }
   };
   return el('div', { className: 'updatebar', role: 'status' }, [
-    el('span', {}, [el('b', { textContent: t('argus-sync {version} is ready', { version: snap.update }) }), ' ',
+    el('span', {}, [el('b', { textContent: t('argus-bridge {version} is ready', { version: snap.update }) }), ' ',
       el('span', { className: 'hint', textContent: t('you have {version}', { version: snap.version }) })]),
     go,
   ]);
@@ -318,7 +318,7 @@ function machineSheet(link) {
   };
 }
 
-const takeLink = (link) => (/^argus-sync:\/\/computer/.test(String(link)) || /[?&]key=ac_/.test(String(link)) ? machineSheet(link) : connectSheet(link));
+const takeLink = (link) => (/^argus-bridge:\/\/computer/.test(String(link)) || /[?&]key=ac_/.test(String(link)) ? machineSheet(link) : connectSheet(link));
 
 // ---------------------------------------------------------------------------------- menus, sheets
 

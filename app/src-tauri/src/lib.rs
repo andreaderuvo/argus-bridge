@@ -1,4 +1,4 @@
-//! argus-sync, the app: the engine of `argus-sync-core` for every connected folder, on a thread of
+//! argus-bridge, the app: the engine of `argus-sync-core` for every connected folder, on a thread of
 //! its own, and a window (plain HTML, `../ui`) that shows what it does and asks what to do. It
 //! lives in the menu bar / the notification area: closing the window keeps it syncing.
 
@@ -170,17 +170,17 @@ fn publish(app: &AppHandle, shared: &Shared) {
     let conflicts: usize = snap.pairs.iter().map(|p| p.status.conflicts.len()).sum();
     let off = snap.pairs.iter().filter(|p| matches!(p.status.state.as_str(), "offline" | "refused")).count();
     let tip = if snap.pairs.is_empty() {
-        tr("argus-sync — nothing connected")
+        tr("argus-bridge — nothing connected")
     } else if snap.paused_all {
-        tr("argus-sync — paused")
+        tr("argus-bridge — paused")
     } else if conflicts > 0 {
-        tr_n("argus-sync — {n} conflict(s) to look at", conflicts)
+        tr_n("argus-bridge — {n} conflict(s) to look at", conflicts)
     } else if off > 0 {
-        tr_n("argus-sync — {n} folder(s) cannot reach the server", off)
+        tr_n("argus-bridge — {n} folder(s) cannot reach the server", off)
     } else if busy > 0 {
-        tr("argus-sync — syncing…")
+        tr("argus-bridge — syncing…")
     } else {
-        tr("argus-sync — up to date")
+        tr("argus-bridge — up to date")
     };
     if let Some(tray) = app.tray_by_id("main") {
         let _ = tray.set_tooltip(Some(&tip));
@@ -227,7 +227,7 @@ fn note(issue: &Issue) -> Option<serde_json::Value> {
     })
 }
 
-/// The conflict copies in the folder: what argus-sync made, still waiting for a decision.
+/// The conflict copies in the folder: what argus-bridge made, still waiting for a decision.
 fn conflicts_in(engine: &Engine) -> Vec<String> {
     let mut out: Vec<String> = engine.state.files.values()
         .filter(|k| !k.dir && k.local.contains(CONFLICT_MARK))
@@ -712,7 +712,7 @@ async fn look_for_update(app: &AppHandle, shared: &Shared) {
     if let Some(update) = &update {
         let version = update.version.clone();
         if update.download_and_install(|_, _| {}, || {}).await.is_ok() {
-            let _ = app.notification().builder().title("argus-sync")
+            let _ = app.notification().builder().title("argus-bridge")
                 .body(words::tr("Updated to {version}").replace("{version}", &version)).show();
             std::thread::sleep(Duration::from_secs(2));
             app.restart();
@@ -747,7 +747,7 @@ fn show(app: &AppHandle) {
 }
 
 fn take_links(app: &AppHandle, shared: &Shared, urls: Vec<String>) {
-    for url in urls.into_iter().filter(|u| u.starts_with("argus-sync:")) {
+    for url in urls.into_iter().filter(|u| u.starts_with("argus-bridge:")) {
         *shared.invite.lock().unwrap() = Some(url.clone());
         // A computer's link and a folder's look alike to the system; the window tells them apart.
         let _ = app.emit("invite", url);
@@ -801,13 +801,13 @@ pub fn run() {
             });
 
             let argus = MenuItem::with_id(app, "argus", tr("Open Argus"), true, None::<&str>)?;
-            let open = MenuItem::with_id(app, "open", tr("Open argus-sync"), true, None::<&str>)?;
+            let open = MenuItem::with_id(app, "open", tr("Open argus-bridge"), true, None::<&str>)?;
             let now = MenuItem::with_id(app, "now", tr("Sync now"), true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", tr("Quit"), true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&argus, &open, &now, &quit])?;
             let tray_shared = shared.clone();
             let mut tray = TrayIconBuilder::with_id("main")
-                .tooltip("argus-sync")
+                .tooltip("argus-bridge")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(move |app, event| match event.id.as_ref() {
@@ -860,5 +860,5 @@ pub fn run() {
             }
         })
         .run(tauri::generate_context!())
-        .expect("argus-sync could not start");
+        .expect("argus-bridge could not start");
 }

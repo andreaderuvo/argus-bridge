@@ -1,4 +1,4 @@
-//! argus-sync's engine: a folder on this computer kept in two-way sync with a folder on an Argus
+//! argus-bridge's engine: a folder on this computer kept in two-way sync with a folder on an Argus
 //! server, through a sync key that opens that folder and nothing else.
 
 pub mod computer;

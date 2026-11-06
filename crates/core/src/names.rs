@@ -20,7 +20,7 @@ pub fn fold(rel: &str) -> String {
 }
 
 /// Left alone on both sides: what operating systems and editors leave behind on their own, and
-/// argus-sync's own working files.
+/// argus-bridge's own working files.
 pub fn ignored(name: &str) -> bool {
     const EXACT: &[&str] = &[
         ".DS_Store", "Thumbs.db", "ehthumbs.db", "desktop.ini", "Desktop.ini", ".argus-sync",

@@ -1,12 +1,12 @@
-//! `argus-sync` without a window: the same engine as the app, for a terminal or a server.
+//! `argus-bridge` without a window: the same engine as the app, for a terminal or a server.
 //!
-//!     argus-sync connect '<link from Argus>' <folder here>
-//!     argus-sync list
-//!     argus-sync run              # keeps every folder in sync until stopped
-//!     argus-sync once             # one round, then exits
-//!     argus-sync fetch <name> <path>   # a big file, asked for
-//!     argus-sync pause|resume|forget <name>
-//!     argus-sync computer ['<link from Argus>'] [--browser] [--terminal] [--actions]
+//!     argus-bridge connect '<link from Argus>' <folder here>
+//!     argus-bridge list
+//!     argus-bridge run              # keeps every folder in sync until stopped
+//!     argus-bridge once             # one round, then exits
+//!     argus-bridge fetch <name> <path>   # a big file, asked for
+//!     argus-bridge pause|resume|forget <name>
+//!     argus-bridge computer ['<link from Argus>'] [--browser] [--terminal] [--actions]
 
 use argus_sync_core::engine::{host_name, Engine, Event, Settings};
 use argus_sync_core::pair::{self, Pair, Pairs};
@@ -44,7 +44,7 @@ fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("argus-sync: {e}");
+            eprintln!("argus-bridge: {e}");
             ExitCode::FAILURE
         }
     }
@@ -63,7 +63,7 @@ fn connect(dir: &PathBuf, link: &str, local: PathBuf) -> Res {
     let made = pairs.add(&invite, local).clone();
     pairs.save(dir).map_err(|e| e.to_string())?;
     println!("connected: {} on {} ({}) ⇄ {}", hello.folder, hello.host, if hello.write { "both ways" } else { "read only" }, made.local.display());
-    println!("run `argus-sync run` to keep it in sync");
+    println!("run `argus-bridge run` to keep it in sync");
     Ok(())
 }
 
@@ -79,7 +79,7 @@ fn list(dir: &PathBuf) -> Res {
 }
 
 fn find<'a>(pairs: &'a mut Pairs, name: &str) -> Result<&'a mut Pair, String> {
-    pairs.pairs.iter_mut().find(|p| p.name == name || p.id == name).ok_or_else(|| format!("no folder called {name:?} (see `argus-sync list`)"))
+    pairs.pairs.iter_mut().find(|p| p.name == name || p.id == name).ok_or_else(|| format!("no folder called {name:?} (see `argus-bridge list`)"))
 }
 
 fn edit(dir: &PathBuf, name: &str, f: impl FnOnce(&mut Pair)) -> Res {
@@ -126,7 +126,7 @@ fn say(name: &str, ev: &Event) {
 fn tell(name: &str, issues: &[Issue], told: &mut std::collections::BTreeSet<String>) {
     for i in issues {
         let line = match i {
-            Issue::Big { remote, size } => format!("{remote} is {} MB — `argus-sync fetch {name} '{remote}'` to bring it", size / 1_000_000),
+            Issue::Big { remote, size } => format!("{remote} is {} MB — `argus-bridge fetch {name} '{remote}'` to bring it", size / 1_000_000),
             Issue::BadName { remote, why } => format!("{remote} cannot exist here: {why}"),
             Issue::CaseClash { kept, skipped } => format!("{skipped} differs from {kept} only by case: this computer keeps {kept}"),
             Issue::FileVersusFolder { path } => format!("{path} is a file on one side and a folder on the other: left alone"),
@@ -140,7 +140,7 @@ fn tell(name: &str, issues: &[Issue], told: &mut std::collections::BTreeSet<Stri
 fn run(dir: &PathBuf, once: bool) -> Res {
     let pairs: Vec<Pair> = Pairs::load(dir).pairs.into_iter().filter(|p| !p.paused).collect();
     if pairs.is_empty() {
-        return Err("nothing to sync — connect a folder first (argus-sync connect '<link>' <folder>)".into());
+        return Err("nothing to sync — connect a folder first (argus-bridge connect '<link>' <folder>)".into());
     }
     let mut engines: Vec<(Pair, Engine, Instant, bool)> = pairs.into_iter().map(|p| {
         let e = engine_for(dir, &p);

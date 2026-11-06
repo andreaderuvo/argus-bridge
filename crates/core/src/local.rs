@@ -1,4 +1,4 @@
-//! The computer's end: the folder as it is on disk, and the file operations argus-sync does there,
+//! The computer's end: the folder as it is on disk, and the file operations argus-bridge does there,
 //! each made safe on its own (a download lands beside its target and is renamed over it; a delete
 //! goes to the system's trash).
 
@@ -91,7 +91,7 @@ pub fn settle(part: &Path, target: &Path, mtime: i64) -> io::Result<fs::Metadata
 
 /// To the system's trash (Finder's, the Recycle Bin, freedesktop's), so a delete that came from
 /// the server can be undone here. Where there is no trash (a server without a desktop), into
-/// `fallback`, a folder argus-sync keeps for the purpose.
+/// `fallback`, a folder argus-bridge keeps for the purpose.
 pub fn to_trash(path: &Path, fallback: &Path) -> io::Result<()> {
     if trash::delete(path).is_ok() {
         return Ok(());

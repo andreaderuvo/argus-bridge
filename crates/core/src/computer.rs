@@ -288,7 +288,7 @@ enum In {
 
 fn hello(setup: &Setup, offers: Offers, browser: Option<(u16, String)>) -> Value {
     let mut hello = json!({"op": "hello", "name": setup.name, "os": std::env::consts::OS,
-                           "client": concat!("argus-sync ", env!("CARGO_PKG_VERSION")), "offers": offers});
+                           "client": concat!("argus-bridge ", env!("CARGO_PKG_VERSION")), "offers": offers});
     if let (true, Some((port, _))) = (offers.browser, browser) {
         hello["browser"] = json!({"version": version(port)});
     }
@@ -309,7 +309,7 @@ pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, 
     request.headers_mut().insert("authorization", format!("Bearer {}", setup.key).parse().unwrap());
     request
         .headers_mut()
-        .insert("user-agent", concat!("argus-sync/", env!("CARGO_PKG_VERSION")).parse().unwrap());
+        .insert("user-agent", concat!("argus-bridge/", env!("CARGO_PKG_VERSION")).parse().unwrap());
     let mut server = match tungstenite::connect(request) {
         Ok((ws, _)) => ws,
         Err(tungstenite::Error::Http(r)) if matches!(r.status().as_u16(), 401 | 403) => {

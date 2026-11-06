@@ -3,7 +3,7 @@ name = "argus-sync-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "The sync engine of argus-sync: a local folder kept in two-way sync with a folder on an Argus server"
+description = "The sync engine of argus-bridge: a local folder kept in two-way sync with a folder on an Argus server"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

@@ -1,12 +1,24 @@
-# argus-sync
+# argus-bridge
 
-A folder of an [Argus](https://github.com/andreaderuvo/argus) server, kept in sync with a folder on
-your computer — both ways, like Dropbox, on **macOS, Windows and Linux**. Files are real files on your
-disk: they open with a double-click, work offline, and what you change goes back to the server.
+Your computer and an [Argus](https://github.com/andreaderuvo/argus) server, linked — on **macOS,
+Windows and Linux**, with no SSH and nothing listening on your computer:
+
+- **Folders in sync**, both ways, like Dropbox: real files on your disk that open with a
+  double-click, work offline, and go back to the server.
+- **This computer, lent to Argus** — each switched on by you: a terminal on it in a window of Argus,
+  its browser for the agents on the server, a command an agent asks and you allow.
+- **A port of the server on your `localhost`** (*Open on Mac* in Argus), **Argus in a window of its
+  own**, and the agents' bells as notifications of your system.
+- **It keeps itself up to date**, with releases signed by this project's key.
+
+It was called argus-sync until 0.1.4: the `argus-sync` command, `argus-sync://` links and the
+settings already made all keep working.
+
+## Folders in sync
 
 - **No administrator, no SSH key, no FUSE**: an app you install for yourself.
 - **Connect with a click**: in Argus, a folder's menu → *Sync to your computer…* gives a link; it opens
-  argus-sync already pointed at that folder. You choose where it goes on your computer.
+  argus-bridge already pointed at that folder. You choose where it goes on your computer.
 - **A key that opens one folder**: no terminal, no sessions, no other file. Taken back from Argus.
 - **Nothing is lost**: a file changed on both sides is kept twice (`report (conflict from laptop …).pdf`);
   a delete goes to the trash (yours, or Argus's); a file over the size limit (500 MB by default) waits
@@ -14,7 +26,7 @@ disk: they open with a double-click, work offline, and what you change goes back
 
 ## This computer, connected to Argus
 
-Besides folders, argus-sync can connect the computer it runs on to an Argus server — with no SSH
+Besides folders, argus-bridge can connect the computer it runs on to an Argus server — with no SSH
 and nothing listening here: one WebSocket from here to Argus, the road the sync already takes.
 What it lends is three switches, **all off until you turn them on**:
 
@@ -25,7 +37,7 @@ What it lends is three switches, **all off until you turn them on**:
   No, and its output goes back to the agent.
 
 In Argus: Settings → Computers → *Connect a computer…* gives an `argus-sync://computer?…` link;
-open it here. From a terminal: `argus-sync computer '<link>' --browser --terminal --actions`.
+open it here. From a terminal: `argus-bridge computer '<link>' --browser --terminal --actions`.
 Disconnecting in Argus closes everything this computer lent.
 
 ## Cross-OS, by design
@@ -42,7 +54,7 @@ Disconnecting in Argus closes everything this computer lent.
 ## Install
 
 Download the installer for your system from the
-[latest release](https://github.com/andreaderuvo/argus-sync/releases/latest):
+[latest release](https://github.com/andreaderuvo/argus-bridge/releases/latest):
 
 | system | file | first launch |
 |---|---|---|
@@ -70,7 +82,7 @@ It needs an Argus with the sync routes (`/api/sync/*`), from the release after 2
 ```
 crates/core   the engine: names.rs (cross-OS rules), plan.rs (what to do — pure, tested case by case),
               engine.rs (doing it, safely), remote.rs (Argus's /api/sync), local.rs, state.rs, pair.rs
-crates/cli    argus-sync without a window: connect, list, run, once, fetch, pause, resume, forget
+crates/cli    argus-bridge without a window: connect, list, run, once, fetch, pause, resume, forget
 app/          the app (Tauri 2): src-tauri/ the Rust side (tray, deep link argus-sync://, the worker),
               ui/ the window — plain HTML/JS, no bundler; ui/mock.js lets it run in a browser
 tests/ui      the window in headless Chromium, against the mock
@@ -80,7 +92,7 @@ tests/ui      the window in headless Chromium, against the mock
 
 ```bash
 cargo test -p argus-sync-core                  # unit tests + against a real Argus (ARGUS_SRC=<argus checkout>)
-cargo build --release -p argus-sync-cli        # target/release/argus-sync
+cargo build --release -p argus-sync-cli        # target/release/argus-bridge
 python -m pytest -q tests/ui                   # the window (needs Chromium)
 cd app/src-tauri && cargo build                # the app (Linux: WebKitGTK 4.1 dev files)
 ```

@@ -119,7 +119,7 @@ impl Remote {
         let agent = ureq::AgentBuilder::new()
             .timeout_connect(Duration::from_secs(10))
             .timeout_read(Duration::from_secs(120))
-            .user_agent(concat!("argus-sync/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("argus-bridge/", env!("CARGO_PKG_VERSION")))
             .build();
         Remote { base: url.trim_end_matches('/').to_string(), key: key.to_string(), agent }
     }
