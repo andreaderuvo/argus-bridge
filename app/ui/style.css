@@ -141,3 +141,8 @@ a.link:hover { text-decoration: underline; }
   padding: .7rem 1rem; border-radius: 11px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
   background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
 .updatebar b { color: var(--bright); }
+
+/* Full Disk Access, asked for once (app.js fullDiskNote): the same voice as a conflict, a line to act on. */
+.sect.fulldisk h3 { color: var(--warn, #c98a00); }
+.sect.fulldisk .acts { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+.sect.fulldisk .acts .hint { font-size: .78rem; }

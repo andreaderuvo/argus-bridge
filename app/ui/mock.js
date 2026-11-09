@@ -9,6 +9,7 @@ let state = {
   version: '0.1.1',
   update: q.has('update') ? '0.1.2' : null,
   machine: q.has('machine') ? { host: 'lab-server', name: 'lap684', offers: { browser: true, terminal: true, actions: false }, on: true, state: 'connected', message: '' } : null,
+  full_disk: q.has('nofulldisk') ? false : null,
   paused_all: false,
   pairs: q.has('empty') ? [] : [
     {

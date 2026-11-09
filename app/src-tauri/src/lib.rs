@@ -78,6 +78,9 @@ struct Snapshot {
     /// This copy's version, and a newer one ready to install (null when this is the newest).
     version: String,
     update: Option<String>,
+    /// On a Mac: whether argus-bridge has Full Disk Access. Without it macOS stops a command that reads
+    /// Documents, Desktop or another app's data to ask "Allow?", and the agent waits for whoever is there.
+    full_disk: Option<bool>,
 }
 
 /// What the window shows of this computer's connection to Argus.
@@ -152,6 +155,7 @@ fn snapshot(shared: &Shared) -> Snapshot {
         computer: host_name(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         update: shared.update.lock().unwrap().clone(),
+        full_disk: full_disk_access(),
         machine: argus_sync_core::computer::Setup::load(&shared.dir).map(|setup| {
             let m = shared.machine.lock().unwrap();
             MachineView {
@@ -680,6 +684,23 @@ fn say_plain(template: &str, session: &str) -> String {
     words::tr(template).replace("{session}", who)
 }
 
+/// Whether this app may read what macOS protects: Safari's folder is there on every Mac and opens only
+/// with Full Disk Access. None elsewhere.
+fn full_disk_access() -> Option<bool> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    let safari = dirs::home_dir()?.join("Library/Safari");
+    Some(std::fs::read_dir(safari).is_ok())
+}
+
+/// The Privacy pane where Full Disk Access is given (System Settings opens on it).
+#[tauri::command]
+fn open_full_disk_settings(app: AppHandle) -> Res<()> {
+    app.opener().open_url("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles", None::<&str>)
+        .map_err(|e| say("Something went wrong: {why}", &[("why", e.to_string())]))
+}
+
 /// A question of Argus as a notification with its answers on it: the first option ("Do it") is the
 /// notification's button, the second ("No") its close button, and a click on the text opens Argus.
 /// Only on a Mac (NSUserNotification); elsewhere false, and the question is shown as a plain
@@ -825,7 +846,7 @@ pub fn run() {
         .manage(shared.clone())
         .invoke_handler(tauri::generate_handler![
             get_snapshot, take_invite, inspect, connect, set_paused, pause_all, set_big, fetch, sync_now,
-            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget, update_now, open_argus
+            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget, update_now, open_argus, open_full_disk_settings
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

@@ -155,3 +155,17 @@ def test_no_argus_to_open_with_nothing_connected(make_page):
     page = make_page("?empty")
     page.wait("!!document.querySelector('#main')")
     assert page.eval("document.querySelector('#argus').hidden")
+
+
+def test_a_mac_without_full_disk_access_is_told_once_how_to_stop_the_questions(make_page):
+    """"It asks Allow every time, and the agent waits" (2026-11-09): with Terminal on and no Full Disk
+    Access, the card says why and opens the setting; with it given, or nothing lent that runs commands,
+    nothing is said."""
+    page = make_page("?machine&nofulldisk")
+    note = "document.querySelector('.card.machine .fulldisk')"
+    page.wait(f"!!{note}", what="the note")
+    page.click(".card.machine .fulldisk button")
+    page.wait("window.__mock.calls.some(c => c[0] === 'open_full_disk_settings')", what="the setting opened")
+    page = make_page("?machine")
+    page.wait("!!document.querySelector('.card.machine')")
+    assert page.eval("!document.querySelector('.fulldisk')")

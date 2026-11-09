@@ -289,9 +289,25 @@ function machineCard() {
     ]),
     m.message ? el('div', { className: 'line bad', textContent: explain(m.message) }) : null,
     switches(m.offers, (offers) => set(offers)),
+    fullDiskNote(m),
     el('div', { className: 'acts' }, [toggle, forget]),
   ]);
   return card;
+}
+
+/* On a Mac with Terminal or Actions lent and no Full Disk Access: macOS would stop an agent's command at
+ * each protected folder to ask "Allow?", and the agent waits for whoever is at the computer. One switch,
+ * once, and it never asks again; gone by itself once given (the app looks at every refresh). */
+function fullDiskNote(m) {
+  if (snap.full_disk !== false || !(m.offers.terminal || m.offers.actions)) return null;
+  return el('section', { className: 'sect fulldisk' }, [
+    el('h3', {}, [icon('warn'), t('Let agents work without asking')]),
+    el('p', { className: 'hint', textContent: t('macOS stops a command that reads Documents, Desktop or another app’s data to ask “Allow?” — and the agent waits until someone answers. Give argus-bridge Full Disk Access once and it never asks again.') }),
+    el('div', { className: 'acts' }, [
+      el('button', { className: 'primary small', type: 'button', textContent: t('Open the setting'), onclick: () => run('open_full_disk_settings') }),
+      el('span', { className: 'hint', textContent: t('Then switch argus-bridge on in the list (add it with + if it is not there).') }),
+    ]),
+  ]);
 }
 
 /** A link from Argus to connect this computer: what it will lend, chosen before anything goes. */
