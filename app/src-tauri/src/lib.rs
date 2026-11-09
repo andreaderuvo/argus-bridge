@@ -762,16 +762,29 @@ fn ask_in_notification(_: &AppHandle, _: &Arc<Shared>, _: String, _: &argus_sync
 
 /// Argus itself, in a window of this app: a Dock icon of its own, no browser tabs. The address is
 /// the server this computer (or else the first folder) is connected to; you sign in once there.
+///
+/// Async on purpose: a window made inside a synchronous command waits on the thread that has to draw it,
+/// and "Open Argus" sometimes took seconds, or a second press, to appear (2026-11-09).
 #[tauri::command]
-fn open_argus(app: AppHandle, shared: tauri::State<Arc<Shared>>) -> Res<()> {
+async fn open_argus(app: AppHandle, shared: tauri::State<'_, Arc<Shared>>) -> Res<()> {
     open_argus_window(&app, &shared)
+}
+
+/// Bring this app to the front: pressed from the menu-bar icon, macOS shows a window of an app that is
+/// not the active one behind the others — the window was there, just not in front.
+fn to_front(app: &AppHandle, w: &tauri::WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    let _ = app.show();
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
+    let _ = w.show();
+    let _ = w.unminimize();
+    let _ = w.set_focus();
 }
 
 fn open_argus_window(app: &AppHandle, shared: &Shared) -> Res<()> {
     if let Some(w) = app.get_webview_window("argus") {
-        let _ = w.show();
-        let _ = w.unminimize();
-        let _ = w.set_focus();
+        to_front(app, &w);
         return Ok(());
     }
     let url = argus_sync_core::computer::Setup::load(&shared.dir).map(|s| s.url)
@@ -782,9 +795,12 @@ fn open_argus_window(app: &AppHandle, shared: &Shared) -> Res<()> {
         .title("Argus")
         .inner_size(1360.0, 880.0)
         .min_inner_size(420.0, 420.0)
+        .focused(true)
+        // Argus's own ground while it loads, not a white rectangle that reads as nothing opening.
+        .background_color(tauri::window::Color(11, 14, 20, 255))
         .build()
-        .map_err(|e| e.to_string())?;
-    Ok(())
+        .map_err(|e| e.to_string())
+        .map(|w| to_front(app, &w))
 }
 
 // ------------------------------------------------------------------------------- updating itself
@@ -911,9 +927,7 @@ fn set_auto_update(app: AppHandle, shared: tauri::State<Arc<Shared>>, on: bool) 
 
 fn show(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
-        let _ = w.show();
-        let _ = w.unminimize();
-        let _ = w.set_focus();
+        to_front(app, &w);
     }
 }
 
