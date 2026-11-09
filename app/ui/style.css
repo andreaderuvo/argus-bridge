@@ -146,3 +146,10 @@ a.link:hover { text-decoration: underline; }
 .sect.fulldisk h3 { color: var(--warn, #c98a00); }
 .sect.fulldisk .acts { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
 .sect.fulldisk .acts .hint { font-size: .78rem; }
+
+/* The version and the updates, at the foot of the window (app.js aboutRow). */
+.aboutrow { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem; padding: .9rem .2rem .4rem; border-top: 1px solid var(--line); margin-top: .4rem; }
+.aboutrow .autoupd { display: inline-flex; gap: .4rem; align-items: center; font-size: .82rem; color: var(--dim); cursor: pointer; }
+.aboutrow .langpick { display: inline-flex; gap: .35rem; align-items: center; margin-left: auto; color: var(--dim); }
+.aboutrow .langpick .ico { width: 15px; height: 15px; }
+.aboutrow select { font: inherit; font-size: .82rem; color: var(--bright); background: var(--panel, transparent); border: 1px solid var(--line); border-radius: .35rem; padding: .15rem .3rem; }

@@ -59,6 +59,12 @@ const IT = {
   'macOS stops a command that reads Documents, Desktop or another app’s data to ask “Allow?” — and the agent waits until someone answers. Give argus-bridge Full Disk Access once and it never asks again.': 'macOS ferma un comando che legge Documenti, Scrivania o i dati di un’altra app per chiedere «Consenti?» — e l’agente aspetta finché qualcuno risponde. Dai ad argus-bridge l’Accesso completo al disco una volta e non lo chiede più.',
   'Open the setting': 'Apri l’impostazione',
   'Then switch argus-bridge on in the list (add it with + if it is not there).': 'Poi accendi argus-bridge nell’elenco (aggiungilo con + se non c’è).',
+  'Check for updates': 'Controlla aggiornamenti',
+  'Checking…': 'Controllo…',
+  'Install updates by themselves': 'Installa gli aggiornamenti da solo',
+  'Off: a new version is offered first, and installed when you say so': 'Spento: una nuova versione viene proposta prima, e installata quando dici tu',
+  'Language': 'Lingua',
+  'Language of the system': 'Lingua del sistema',
   '{path} is a file on one side and a folder on the other: left alone': '{path} è un file da una parte e una cartella dall’altra: lasciato com’è',
   'a character Windows does not allow': 'un carattere che Windows non ammette',
   'a name ending with a dot or a space': 'un nome che finisce con un punto o uno spazio',
@@ -189,6 +195,12 @@ const ES = {
   'macOS stops a command that reads Documents, Desktop or another app’s data to ask “Allow?” — and the agent waits until someone answers. Give argus-bridge Full Disk Access once and it never asks again.': 'macOS detiene un comando que lee Documentos, Escritorio o los datos de otra app para preguntar «¿Permitir?», y el agente espera hasta que alguien responde. Da a argus-bridge Acceso total al disco una vez y no vuelve a preguntar.',
   'Open the setting': 'Abrir el ajuste',
   'Then switch argus-bridge on in the list (add it with + if it is not there).': 'Luego activa argus-bridge en la lista (añádelo con + si no está).',
+  'Check for updates': 'Buscar actualizaciones',
+  'Checking…': 'Comprobando…',
+  'Install updates by themselves': 'Instalar las actualizaciones solas',
+  'Off: a new version is offered first, and installed when you say so': 'Apagado: una versión nueva se ofrece primero y se instala cuando digas',
+  'Language': 'Idioma',
+  'Language of the system': 'Idioma del sistema',
   '{path} is a file on one side and a folder on the other: left alone': '{path} es un archivo en un lado y una carpeta en el otro: se deja como está',
   'a character Windows does not allow': 'un carácter que Windows no admite',
   'a name ending with a dot or a space': 'un nombre que termina en punto o espacio',
@@ -281,6 +293,12 @@ const FR = {
   'macOS stops a command that reads Documents, Desktop or another app’s data to ask “Allow?” — and the agent waits until someone answers. Give argus-bridge Full Disk Access once and it never asks again.': 'macOS arrête une commande qui lit Documents, Bureau ou les données d’une autre app pour demander « Autoriser ? » — et l’agent attend qu’on réponde. Donnez une fois à argus-bridge l’accès complet au disque et il ne demande plus.',
   'Open the setting': 'Ouvrir le réglage',
   'Then switch argus-bridge on in the list (add it with + if it is not there).': 'Puis activez argus-bridge dans la liste (ajoutez-le avec + s’il n’y est pas).',
+  'Check for updates': 'Rechercher des mises à jour',
+  'Checking…': 'Vérification…',
+  'Install updates by themselves': 'Installer les mises à jour toutes seules',
+  'Off: a new version is offered first, and installed when you say so': 'Désactivé : une nouvelle version est d’abord proposée, et installée quand vous le dites',
+  'Language': 'Langue',
+  'Language of the system': 'Langue du système',
   '{path} is a file on one side and a folder on the other: left alone': '{path} est un fichier d’un côté et un dossier de l’autre : laissé tel quel',
   'a character Windows does not allow': 'un caractère que Windows n’accepte pas',
   'a name ending with a dot or a space': 'un nom finissant par un point ou un espace',
@@ -316,7 +334,10 @@ const FR = {
 };
 export const CATALOGUES = { it: IT, es: ES, fr: FR };
 const ALL = CATALOGUES;
-const lang = (navigator.language || 'en').slice(0, 2);
+// Chosen at the foot of the window (kept here and by the app, for its menu), else the system's.
+const chosen = (() => { try { return localStorage.getItem('argus-bridge.lang') || ''; } catch { return ''; } })();
+export const lang = chosen || (navigator.language || 'en').slice(0, 2);
+export const langChosen = chosen;
 const table = ALL[lang] || {};
 document.documentElement.lang = ALL[lang] ? lang : 'en';
 

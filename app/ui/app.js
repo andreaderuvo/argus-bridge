@@ -1,6 +1,6 @@
 // argus-bridge's window. Everything it shows comes from the app's "snapshot" (sent after every round
 // of every folder); everything it does is one command to the app. No framework, no build step.
-import { t, bytes } from './words.js';
+import { t, bytes, langChosen } from './words.js';
 
 if (!window.__TAURI__) await import('./mock.js');          // a browser, for development: a pretend app
 const { invoke } = window.__TAURI__.core;
@@ -106,7 +106,7 @@ function paint() {
   $('#pauseall').hidden = !snap.pairs.length;
   const main = $('#main');
   const keep = main.scrollTop;
-  main.replaceChildren(...[updateBar(), machineCard(), ...(snap.pairs.length ? snap.pairs.map(card) : [emptyState()])].filter(Boolean));
+  main.replaceChildren(...[updateBar(), machineCard(), ...(snap.pairs.length ? snap.pairs.map(card) : [emptyState()]), aboutRow()].filter(Boolean));
   main.scrollTop = keep;
 }
 
@@ -239,6 +239,35 @@ function updateBar() {
     el('span', {}, [el('b', { textContent: t('argus-bridge {version} is ready', { version: snap.update }) }), ' ',
       el('span', { className: 'hint', textContent: t('you have {version}', { version: snap.version }) })]),
     go,
+  ]);
+}
+
+/* The version, a check for a newer one, and whether newer ones install by themselves or are asked
+ * first ("someone may not want it automatic", 2026-11-09). Asked first unless switched. */
+function aboutRow() {
+  const check = el('button', { className: 'small', type: 'button', textContent: t('Check for updates') });
+  check.onclick = async () => {
+    check.disabled = true;
+    check.textContent = t('Checking…');
+    try { await invoke('check_updates'); } catch (e) { toast(explain(e)); }
+    check.disabled = false;
+    check.textContent = t('Check for updates');
+  };
+  const auto = el('input', { type: 'checkbox', checked: !!snap.auto_update, onchange: () => run('set_auto_update', { on: auto.checked }) });
+  const language = el('select', { id: 'language', title: t('Language') });
+  for (const [v, name] of [['', t('Language of the system')], ['en', 'English'], ['it', 'Italiano'], ['es', 'Español'], ['fr', 'Français']]) {
+    language.append(el('option', { value: v, textContent: name, selected: v === langChosen }));
+  }
+  language.onchange = async () => {
+    try { localStorage.setItem('argus-bridge.lang', language.value); } catch { /* the app keeps it too */ }
+    await run('set_language', { lang: language.value });
+    location.reload();
+  };
+  return el('footer', { className: 'aboutrow' }, [
+    el('span', { className: 'hint', textContent: `argus-bridge ${snap.version}` }),
+    check,
+    el('label', { className: 'autoupd', title: t('Off: a new version is offered first, and installed when you say so') }, [auto, t('Install updates by themselves')]),
+    el('label', { className: 'langpick' }, [icon('globe'), language]),
   ]);
 }
 

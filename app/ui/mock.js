@@ -10,6 +10,8 @@ let state = {
   update: q.has('update') ? '0.1.2' : null,
   machine: q.has('machine') ? { host: 'lab-server', name: 'lap684', offers: { browser: true, terminal: true, actions: false }, on: true, state: 'connected', message: '' } : null,
   full_disk: q.has('nofulldisk') ? false : null,
+  auto_update: false,
+  language: '',
   paused_all: false,
   pairs: q.has('empty') ? [] : [
     {
@@ -66,6 +68,9 @@ window.__TAURI__ = {
         case 'machine_link':
           state.machine = { host: 'lab-server', name: 'lap684', offers: { browser: args.browser, terminal: args.terminal, actions: args.actions }, on: true, state: 'connecting', message: '' };
           break;
+        case 'set_auto_update': state.auto_update = args.on; break;
+        case 'check_updates': break;
+        case 'set_language': state.language = args.lang; break;
         case 'machine_set': state.machine = { ...state.machine, offers: { browser: args.browser, terminal: args.terminal, actions: args.actions }, on: args.on, state: args.on ? 'connected' : 'off' }; break;
         case 'machine_forget': state.machine = null; break;
         case 'open_argus': return null;

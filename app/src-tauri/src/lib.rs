@@ -81,6 +81,9 @@ struct Snapshot {
     /// On a Mac: whether argus-bridge has Full Disk Access. Without it macOS stops a command that reads
     /// Documents, Desktop or another app's data to ask "Allow?", and the agent waits for whoever is there.
     full_disk: Option<bool>,
+    /// Newer versions installed by themselves (true) or asked first (false).
+    auto_update: bool,
+    language: String,
 }
 
 /// What the window shows of this computer's connection to Argus.
@@ -128,6 +131,30 @@ struct Shared {
     machine: Mutex<Machine>,
     /// A newer version found on GitHub (signed by us — the updater checks), ready to install.
     update: Mutex<Option<String>>,
+    updates: Mutex<UpdatePrefs>,
+}
+
+/// How newer versions arrive: asked first (the default), or installed by themselves. A version you said
+/// "Later" to is not asked again at every hourly look; a press of Check for updates asks it again.
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
+struct UpdatePrefs {
+    #[serde(default)]
+    auto: bool,
+    #[serde(default)]
+    later: Option<String>,
+    /// The window's and the menu's language: "" follows the system's.
+    #[serde(default)]
+    language: String,
+}
+
+impl UpdatePrefs {
+    fn load(dir: &Path) -> UpdatePrefs {
+        std::fs::read(dir.join("updates.json")).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    }
+    fn save(&self, dir: &Path) {
+        let _ = std::fs::create_dir_all(dir);
+        let _ = std::fs::write(dir.join("updates.json"), serde_json::to_vec_pretty(self).unwrap_or_default());
+    }
 }
 
 impl Shared {
@@ -156,6 +183,8 @@ fn snapshot(shared: &Shared) -> Snapshot {
         version: env!("CARGO_PKG_VERSION").to_string(),
         update: shared.update.lock().unwrap().clone(),
         full_disk: full_disk_access(),
+        auto_update: shared.updates.lock().unwrap().auto,
+        language: shared.updates.lock().unwrap().language.clone(),
         machine: argus_sync_core::computer::Setup::load(&shared.dir).map(|setup| {
             let m = shared.machine.lock().unwrap();
             MachineView {
@@ -764,29 +793,65 @@ const UPDATE_EVERY: Duration = Duration::from_secs(3600);
 
 /// Ask GitHub whether a newer version is out. The updater only accepts one signed by the key whose
 /// public half is in tauri.conf.json: a release nobody signed is never offered, let alone installed.
-async fn look_for_update(app: &AppHandle, shared: &Shared) {
-    use tauri_plugin_notification::NotificationExt;
+///
+/// Asked first unless you chose otherwise ("someone may not want it automatic", 2026-11-09): a dialog of
+/// the system, Update and restart or Later. `asked` is a press of Check for updates — it asks even a
+/// version you said Later to, and says so when there is nothing newer.
+async fn look_for_update(app: &AppHandle, shared: &Arc<Shared>, asked: bool) -> Res<Option<String>> {
     use tauri_plugin_updater::UpdaterExt;
-    let update = match app.updater() {
-        Ok(u) => u.check().await.ok().flatten(),
-        Err(_) => None,
-    };
-    // Installed at once, on its own, and started again: nobody has to press anything. A failure
-    // leaves the bar in the window, which tries again with one press.
-    if let Some(update) = &update {
-        let version = update.version.clone();
-        if update.download_and_install(|_, _| {}, || {}).await.is_ok() {
-            let _ = app.notification().builder().title("argus-bridge")
-                .body(words::tr("Updated to {version}").replace("{version}", &version)).show();
-            std::thread::sleep(Duration::from_secs(2));
-            app.restart();
-        }
-    }
-    let found = update.map(|u| u.version);
+    let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?;
+    let found = update.as_ref().map(|u| u.version.clone());
     let changed = *shared.update.lock().unwrap() != found;
-    *shared.update.lock().unwrap() = found;
+    *shared.update.lock().unwrap() = found.clone();
     if changed {
         publish(app, shared);
+    }
+    let prefs = shared.updates.lock().unwrap().clone();
+    match (&found, prefs.auto && !asked) {
+        (Some(_), true) => install(app, update.unwrap()).await,
+        (Some(v), false) if asked || prefs.later.as_deref() != Some(v.as_str()) => offer(app, shared, v.clone()),
+        (None, _) if asked => {
+            use tauri_plugin_dialog::DialogExt;
+            app.dialog().message(words::tr("You have the newest version ({version}).").replace("{version}", env!("CARGO_PKG_VERSION")))
+                .title("argus-bridge").show(|_| {});
+        }
+        _ => {}
+    }
+    Ok(found)
+}
+
+/// "argus-bridge 0.1.10 is out (you have 0.1.9). Update now?" — Update and restart, or Later.
+fn offer(app: &AppHandle, shared: &Arc<Shared>, version: String) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+    let text = words::tr("argus-bridge {version} is out (you have {current}). Update now? It restarts by itself; your folders and this computer's connection carry on.")
+        .replace("{version}", &version).replace("{current}", env!("CARGO_PKG_VERSION"));
+    let (app2, shared2) = (app.clone(), shared.clone());
+    app.dialog().message(text).title(words::tr("A new version of argus-bridge"))
+        .buttons(MessageDialogButtons::OkCancelCustom(words::tr("Update and restart"), words::tr("Later")))
+        .show(move |yes| {
+            if yes {
+                tauri::async_runtime::spawn(async move {
+                    use tauri_plugin_updater::UpdaterExt;
+                    if let Ok(Some(u)) = match app2.updater() { Ok(up) => up.check().await, Err(e) => Err(e) } {
+                        install(&app2, u).await;
+                    }
+                });
+            } else {
+                let mut prefs = shared2.updates.lock().unwrap();
+                prefs.later = Some(version);
+                prefs.save(&shared2.dir);
+            }
+        });
+}
+
+async fn install(app: &AppHandle, update: tauri_plugin_updater::Update) {
+    use tauri_plugin_notification::NotificationExt;
+    let version = update.version.clone();
+    if update.download_and_install(|_, _| {}, || {}).await.is_ok() {
+        let _ = app.notification().builder().title("argus-bridge")
+            .body(words::tr("Updated to {version}").replace("{version}", &version)).show();
+        std::thread::sleep(Duration::from_secs(2));
+        app.restart();
     }
 }
 
@@ -798,6 +863,48 @@ async fn update_now(app: AppHandle) -> Res<()> {
         .ok_or_else(|| say("This is the newest version", &[]))?;
     update.download_and_install(|_, _| {}, || {}).await.map_err(|e| say("The update did not install: {why}", &[("why", e.to_string())]))?;
     app.restart();
+}
+
+/// Check for updates, pressed: asks GitHub now, and answers either way.
+#[tauri::command]
+async fn check_updates(app: AppHandle, shared: tauri::State<'_, Arc<Shared>>) -> Res<Option<String>> {
+    look_for_update(&app, shared.inner(), true).await
+}
+
+/// The language of the window and of the menu ("" = the system's). The window reloads itself; the
+/// menu is made again here.
+#[tauri::command]
+fn set_language(app: AppHandle, shared: tauri::State<Arc<Shared>>, lang: String) -> Res<()> {
+    let lang = if ["en", "it", "es", "fr"].contains(&lang.as_str()) { lang } else { String::new() };
+    let mut prefs = shared.updates.lock().unwrap();
+    prefs.language = lang.clone();
+    prefs.save(&shared.dir);
+    drop(prefs);
+    words::choose(&lang);
+    if let (Some(tray), Ok(menu)) = (app.tray_by_id("main"), tray_menu(&app)) {
+        let _ = tray.set_menu(Some(menu));
+    }
+    publish(&app, &shared);
+    Ok(())
+}
+
+fn tray_menu<R: tauri::Runtime, M: tauri::Manager<R>>(app: &M) -> tauri::Result<Menu<R>> {
+    let argus = MenuItem::with_id(app, "argus", tr("Open Argus"), true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", tr("Open argus-bridge"), true, None::<&str>)?;
+    let now = MenuItem::with_id(app, "now", tr("Sync now"), true, None::<&str>)?;
+    let check = MenuItem::with_id(app, "check", tr("Check for updates…"), true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", tr("Quit"), true, None::<&str>)?;
+    Menu::with_items(app, &[&argus, &open, &now, &check, &quit])
+}
+
+/// Installed by themselves, or asked first.
+#[tauri::command]
+fn set_auto_update(app: AppHandle, shared: tauri::State<Arc<Shared>>, on: bool) {
+    let mut prefs = shared.updates.lock().unwrap();
+    prefs.auto = on;
+    prefs.save(&shared.dir);
+    drop(prefs);
+    publish(&app, &shared);
 }
 
 // ----------------------------------------------------------------------------------------- app
@@ -829,6 +936,7 @@ pub fn run() {
         wake: Mutex::new(None),
         machine: Mutex::new(Machine::default()),
         update: Mutex::new(None),
+        updates: Mutex::new(UpdatePrefs::load(&pair::config_dir())),
     });
     let for_instance = shared.clone();
     tauri::Builder::default()
@@ -846,7 +954,7 @@ pub fn run() {
         .manage(shared.clone())
         .invoke_handler(tauri::generate_handler![
             get_snapshot, take_invite, inspect, connect, set_paused, pause_all, set_big, fetch, sync_now,
-            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget, update_now, open_argus, open_full_disk_settings
+            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget, update_now, open_argus, open_full_disk_settings, check_updates, set_auto_update, set_language
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -864,11 +972,8 @@ pub fn run() {
                 take_links(&h2, &on_link, event.urls().into_iter().map(|u| u.to_string()).collect());
             });
 
-            let argus = MenuItem::with_id(app, "argus", tr("Open Argus"), true, None::<&str>)?;
-            let open = MenuItem::with_id(app, "open", tr("Open argus-bridge"), true, None::<&str>)?;
-            let now = MenuItem::with_id(app, "now", tr("Sync now"), true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", tr("Quit"), true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&argus, &open, &now, &quit])?;
+            words::choose(&shared.updates.lock().unwrap().language.clone());
+            let menu = tray_menu(app)?;
             let tray_shared = shared.clone();
             let mut tray = TrayIconBuilder::with_id("main")
                 .tooltip("argus-bridge")
@@ -882,6 +987,10 @@ pub fn run() {
                         }
                     }
                     "now" => tray_shared.nudge(),
+                    "check" => {
+                        let (a, sh) = (app.clone(), tray_shared.clone());
+                        tauri::async_runtime::spawn(async move { let _ = look_for_update(&a, &sh, true).await; });
+                    }
                     "quit" => app.exit(0),
                     _ => {}
                 })
@@ -911,7 +1020,7 @@ pub fn run() {
             // A newer version, looked for at start and every six hours.
             let (up_handle, up_shared) = (machine_handle.clone(), shared.clone());
             std::thread::spawn(move || loop {
-                tauri::async_runtime::block_on(look_for_update(&up_handle, &up_shared));
+                let _ = tauri::async_runtime::block_on(look_for_update(&up_handle, &up_shared, false));
                 std::thread::sleep(UPDATE_EVERY);
             });
             Ok(())

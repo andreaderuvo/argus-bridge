@@ -169,3 +169,25 @@ def test_a_mac_without_full_disk_access_is_told_once_how_to_stop_the_questions(m
     page = make_page("?machine")
     page.wait("!!document.querySelector('.card.machine')")
     assert page.eval("!document.querySelector('.fulldisk')")
+
+
+def test_updates_are_asked_first_and_checked_by_hand(make_page):
+    """"A dialog: a new version is out, update? — someone may not want it automatic; and a button to
+    check" (2026-11-09). Asked first by default; the switch and the button reach the app."""
+    page = make_page()
+    page.wait("!!document.querySelector('.aboutrow')", what="the foot of the window")
+    assert "argus-bridge 0.1.1" in page.eval("document.querySelector('.aboutrow').textContent")
+    assert page.eval("document.querySelector('.aboutrow .autoupd input').checked") is False
+    page.click(".aboutrow button")
+    page.wait("window.__mock.calls.some(c => c[0] === 'check_updates')", what="checked")
+    page.click(".aboutrow .autoupd input")
+    page.wait("window.__mock.calls.some(c => c[0] === 'set_auto_update' && c[1].on === true)", what="automatic")
+
+
+def test_the_language_is_chosen_at_the_foot_of_the_window(make_page):
+    """"How is the language changed in argus-bridge?" (2026-11-09): it followed the system's only."""
+    page = make_page()
+    page.wait("!!document.getElementById('language')", what="the choice")
+    page.eval("(() => { const s = document.getElementById('language'); s.value = 'it'; s.dispatchEvent(new Event('change')); })()")
+    page.wait("document.querySelector('#add')?.textContent.includes('Collega')", what="in Italian after the reload")
+    assert page.eval("document.getElementById('language').value") == "it"
