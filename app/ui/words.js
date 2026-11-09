@@ -35,7 +35,7 @@ const IT = {
   'That is not inside the synced folder': 'Non è dentro la cartella sincronizzata',
   '{path} is not there': '{path} non c’è',
 
-  'That is not a link from Argus — it starts with argus-sync://': 'Questo non è un link di Argus — inizia con argus-sync://',
+  'That is not a link from Argus — it starts with argus-bridge://': 'Questo non è un link di Argus — inizia con argus-bridge://',
   'That folder is not connected any more': 'Quella cartella non è più collegata',
   'Choose a folder on this computer': 'Scegli una cartella su questo computer',
   '{path} is already in sync with {name} — choose another folder': '{path} è già sincronizzata con {name} — scegli un’altra cartella',
@@ -100,7 +100,7 @@ const IT = {
   'Disconnect…': 'Scollega…',
   'Connect a folder from Argus': 'Collega una cartella da Argus',
   'Link from Argus': 'Link da Argus',
-  'argus-sync://pair?…': 'argus-sync://pair?…',
+  'argus-bridge://pair?…': 'argus-bridge://pair?…',
   'Looking…': 'Controllo…',
   '{folder} on {host}': '{folder} su {host}',
   'both ways': 'nei due sensi',
@@ -160,7 +160,7 @@ const ES = {
   'That is not inside the synced folder': 'No está dentro de la carpeta sincronizada',
   '{path} is not there': '{path} no está',
 
-  'That is not a link from Argus — it starts with argus-sync://': 'Esto no es un enlace de Argus — empieza por argus-sync://',
+  'That is not a link from Argus — it starts with argus-bridge://': 'Esto no es un enlace de Argus — empieza por argus-bridge://',
   'That folder is not connected any more': 'Esa carpeta ya no está conectada',
   'Choose a folder on this computer': 'Elige una carpeta de este ordenador',
   '{path} is already in sync with {name} — choose another folder': '{path} ya está sincronizada con {name} — elige otra carpeta',
@@ -247,7 +247,7 @@ const FR = {
   'That is not inside the synced folder': 'Ce n’est pas dans le dossier synchronisé',
   '{path} is not there': '{path} n’existe pas',
 
-  'That is not a link from Argus — it starts with argus-sync://': 'Ce n’est pas un lien d’Argus — il commence par argus-sync://',
+  'That is not a link from Argus — it starts with argus-bridge://': 'Ce n’est pas un lien d’Argus — il commence par argus-bridge://',
   'That folder is not connected any more': 'Ce dossier n’est plus connecté',
   'Choose a folder on this computer': 'Choisissez un dossier sur cet ordinateur',
   '{path} is already in sync with {name} — choose another folder': '{path} est déjà synchronisé avec {name} — choisissez un autre dossier',

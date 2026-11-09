@@ -53,7 +53,7 @@ fn main() -> ExitCode {
 type Res = Result<(), String>;
 
 fn connect(dir: &PathBuf, link: &str, local: PathBuf) -> Res {
-    let invite = pair::parse_link(link).ok_or("that is not a link from Argus (argus-sync://pair?url=…&key=…)")?;
+    let invite = pair::parse_link(link).ok_or("that is not a link from Argus (argus-bridge://pair?url=…&key=…)")?;
     let hello = Remote::new(&invite.url, &invite.key).hello().map_err(|e| e.to_string())?;
     let local = std::path::absolute(&local).map_err(|e| e.to_string())?;
     let mut pairs = Pairs::load(dir);
@@ -204,7 +204,7 @@ fn computer(dir: &PathBuf, args: &[String]) -> Res {
     }
     let mut setup = match link {
         Some(text) => {
-            let invite = computer::parse_link(text).ok_or("that is not a link from Argus to connect a computer (argus-sync://computer?url=…&key=ac_…)")?;
+            let invite = computer::parse_link(text).ok_or("that is not a link from Argus to connect a computer (argus-bridge://computer?url=…&key=ac_…)")?;
             Setup { url: invite.url, key: invite.key, name: if invite.name.is_empty() { argus_sync_core::engine::host_name() } else { invite.name },
                     offers: Offers::default(), on: true }
         }

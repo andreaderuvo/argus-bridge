@@ -52,7 +52,7 @@ def test_a_bad_link_says_so_and_cannot_connect(make_page):
     page.click_text("Connect a folder", within="#add")
     page.type("hello")
     page.wait("!document.querySelector('.box .err').hidden", what="the error")
-    assert "argus-sync://" in page.text(".box .err")
+    assert "argus-bridge://" in page.text(".box .err")
     assert page.eval("[...document.querySelectorAll('.box button')].find(b => b.textContent === 'Connect').disabled")
 
 

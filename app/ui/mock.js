@@ -47,7 +47,7 @@ window.__TAURI__ = {
         case 'get_snapshot': return structuredClone(state);
         case 'take_invite': return q.get('invite');
         case 'inspect':
-          if (!String(args.link).startsWith('argus-sync://')) throw JSON.stringify({ say: 'That is not a link from Argus — it starts with argus-sync://', values: {} });
+          if (!/^argus-(sync|bridge):\/\//.test(String(args.link))) throw JSON.stringify({ say: 'That is not a link from Argus — it starts with argus-bridge://', values: {} });
           return { url: 'http://lab-server:8090', host: 'lab-server', name: 'wgs-batch-12', folder: 'wgs-batch-12', write: true, suggested: '/Users/sam/argus-bridge/wgs-batch-12' };
         case 'connect':
           state.pairs.push({ id: `n${state.pairs.length}`, name: 'wgs-batch-12', url: 'http://lab-server:8090', host: 'lab-server', local: args.local, paused: false, big_mb: 500,

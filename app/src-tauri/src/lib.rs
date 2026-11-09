@@ -406,7 +406,7 @@ fn take_invite(shared: tauri::State<Arc<Shared>>) -> Option<String> {
 /// "proj on lab-server, both ways" and suggest where to put it.
 #[tauri::command]
 async fn inspect(link: String) -> Res<InviteView> {
-    let invite = pair::parse_link(&link).ok_or_else(|| say("That is not a link from Argus — it starts with argus-sync://", &[]))?;
+    let invite = pair::parse_link(&link).ok_or_else(|| say("That is not a link from Argus — it starts with argus-bridge://", &[]))?;
     let url = invite.url.clone();
     let key = invite.key.clone();
     let hello = tauri::async_runtime::spawn_blocking(move || Remote::new(&url, &key).hello())
@@ -428,7 +428,7 @@ async fn inspect(link: String) -> Res<InviteView> {
 
 #[tauri::command]
 fn connect(shared: tauri::State<Arc<Shared>>, link: String, local: String) -> Res<String> {
-    let invite = pair::parse_link(&link).ok_or_else(|| say("That is not a link from Argus — it starts with argus-sync://", &[]))?;
+    let invite = pair::parse_link(&link).ok_or_else(|| say("That is not a link from Argus — it starts with argus-bridge://", &[]))?;
     let local = PathBuf::from(local);
     if !local.is_absolute() {
         return Err(say("Choose a folder on this computer", &[]));
@@ -747,7 +747,7 @@ fn show(app: &AppHandle) {
 }
 
 fn take_links(app: &AppHandle, shared: &Shared, urls: Vec<String>) {
-    for url in urls.into_iter().filter(|u| u.starts_with("argus-bridge:")) {
+    for url in urls.into_iter().filter(|u| pair::is_our_link(u)) {
         *shared.invite.lock().unwrap() = Some(url.clone());
         // A computer's link and a folder's look alike to the system; the window tells them apart.
         let _ = app.emit("invite", url);

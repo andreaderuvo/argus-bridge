@@ -111,7 +111,7 @@ function paint() {
 }
 
 function emptyState() {
-  const input = el('input', { type: 'text', placeholder: 'argus-sync://pair?…', spellcheck: false });
+  const input = el('input', { type: 'text', placeholder: 'argus-bridge://pair?…', spellcheck: false });
   const go = el('button', { className: 'primary', type: 'button', textContent: t('Continue'), onclick: () => takeLink(input.value) });
   input.onkeydown = (e) => { if (e.key === 'Enter') go.click(); };
   return el('section', { className: 'empty' }, [
@@ -318,7 +318,7 @@ function machineSheet(link) {
   };
 }
 
-const takeLink = (link) => (/^argus-bridge:\/\/computer/.test(String(link)) || /[?&]key=ac_/.test(String(link)) ? machineSheet(link) : connectSheet(link));
+const takeLink = (link) => (/^argus-(sync|bridge):\/\/computer/.test(String(link)) || /[?&]key=ac_/.test(String(link)) ? machineSheet(link) : connectSheet(link));
 
 // ---------------------------------------------------------------------------------- menus, sheets
 
@@ -353,7 +353,7 @@ function sheet(title, body, buttons) {
 function shut() { $('#sheet').hidden = true; $('#sheet').replaceChildren(); document.onkeydown = null; }
 
 async function connectSheet(link = '') {
-  const input = el('input', { type: 'text', value: link, placeholder: 'argus-sync://pair?…', spellcheck: false });
+  const input = el('input', { type: 'text', value: link, placeholder: 'argus-bridge://pair?…', spellcheck: false });
   const found = el('div', { hidden: true });
   const dest = el('input', { type: 'text', spellcheck: false });
   const destRow = el('label', { hidden: true }, [t('On this computer'), el('div', { className: 'row' }, [dest,

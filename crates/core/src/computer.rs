@@ -31,7 +31,7 @@ use tungstenite::{Message, WebSocket};
 
 const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 
-/// What a link from Argus carries: `argus-sync://computer?url=…&key=…&name=…`.
+/// What a link from Argus carries (`argus-sync://` for the links made before the rename): `argus-bridge://computer?url=…&key=…&name=…`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Invite {
     pub url: String,

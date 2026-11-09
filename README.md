@@ -36,7 +36,7 @@ What it lends is three switches, **all off until you turn them on**:
 - **Actions** — a command an agent asks to run here; each one is put to you in Argus as Do it /
   No, and its output goes back to the agent.
 
-In Argus: Settings → Computers → *Connect a computer…* gives an `argus-sync://computer?…` link;
+In Argus: Settings → Computers → *Connect a computer…* gives an `argus-bridge://computer?…` link;
 open it here. From a terminal: `argus-bridge computer '<link>' --browser --terminal --actions`.
 Disconnecting in Argus closes everything this computer lent.
 
@@ -83,7 +83,7 @@ It needs an Argus with the sync routes (`/api/sync/*`), from the release after 2
 crates/core   the engine: names.rs (cross-OS rules), plan.rs (what to do — pure, tested case by case),
               engine.rs (doing it, safely), remote.rs (Argus's /api/sync), local.rs, state.rs, pair.rs
 crates/cli    argus-bridge without a window: connect, list, run, once, fetch, pause, resume, forget
-app/          the app (Tauri 2): src-tauri/ the Rust side (tray, deep link argus-sync://, the worker),
+app/          the app (Tauri 2): src-tauri/ the Rust side (tray, deep links argus-bridge:// and argus-sync://, the worker),
               ui/ the window — plain HTML/JS, no bundler; ui/mock.js lets it run in a browser
 tests/ui      the window in headless Chromium, against the mock
 ```

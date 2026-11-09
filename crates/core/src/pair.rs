@@ -36,12 +36,19 @@ pub fn default_big() -> u64 {
     500 * 1024 * 1024
 }
 
-/// What a link from Argus carries: `argus-sync://pair?url=…&key=…&name=…`.
+/// What a link from Argus carries (`argus-sync://` for the links made before the rename): `argus-bridge://pair?url=…&key=…&name=…`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Invite {
     pub url: String,
     pub key: String,
     pub name: String,
+}
+
+/// Whether the system handed us a link of ours: `argus-bridge://` now, `argus-sync://` before the
+/// rename — every link made until then, and every copy of Argus not updated yet. 0.1.5 took only the
+/// new one, and every link clicked was dropped without a word (2026-11-09).
+pub fn is_our_link(url: &str) -> bool {
+    url.starts_with("argus-bridge:") || url.starts_with("argus-sync:")
 }
 
 /// Read a link from Argus — or the same thing pasted, with or without its scheme.
@@ -134,6 +141,10 @@ mod tests {
         assert_eq!(i, Invite { url: "http://lab-server:8090".into(), key: "as_abc-DEF_123".into(), name: "report salmonella".into() });
         assert_eq!(parse_link(&format!("  {link}\n")), Some(i.clone()));
         assert_eq!(parse_link(link.split_once('?').unwrap().1), Some(i));
+        assert!(is_our_link(link) && is_our_link(&link.replace("argus-sync://", "argus-bridge://")));
+        assert!(!is_our_link("https://example.org/?key=as_x"));
+        // The name now, and the one before: both read the same.
+        assert_eq!(parse_link(&link.replace("argus-sync://", "argus-bridge://")), parse_link(link));
         assert!(parse_link("argus-sync://pair?url=ftp%3A%2F%2Fx&key=as_x").is_none());
         assert!(parse_link("argus-sync://pair?url=http%3A%2F%2Fx&key=not-a-sync-key").is_none());
         assert!(parse_link("hello").is_none());
