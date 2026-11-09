@@ -145,55 +145,145 @@ pub fn find_chrome() -> Option<PathBuf> {
 
 /// A Chrome started for lending, and how to reach it here.
 pub struct Chrome {
-    pub child: Child,
+    /// The Chrome started here; `None` for one found already running on this profile and taken over.
+    pub child: Option<Child>,
+    /// The process of a Chrome taken over, ended with it — only while the profile's lock still names it.
+    pub pid: Option<u32>,
+    pub profile: PathBuf,
     pub port: u16,
     /// `/devtools/browser/<id>`: the id is the secret Argus keeps from everybody but its agents.
     pub ws_path: String,
 }
 
+impl Chrome {
+    pub fn alive(&mut self) -> bool {
+        match self.child.as_mut() {
+            Some(c) => matches!(c.try_wait(), Ok(None)),
+            None => port_answers(self.port),
+        }
+    }
+}
+
 impl Drop for Chrome {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if let Some(c) = self.child.as_mut() {
+            let _ = c.kill();
+            let _ = c.wait();
+        } else if let Some(pid) = self.pid {
+            if holder(&self.profile) == Some(pid) {
+                end_process(pid);
+            }
+        }
+    }
+}
+
+fn port_answers(port: u16) -> bool {
+    port != 0 && std::net::TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_millis(500)).is_ok()
+}
+
+fn read_active(profile: &Path) -> Option<(u16, String)> {
+    let text = fs::read_to_string(profile.join("DevToolsActivePort")).ok()?;
+    let mut lines = text.lines();
+    let port = lines.next()?.trim().parse().ok()?;
+    let path = lines.next()?.trim().to_string();
+    path.starts_with("/devtools/browser/").then_some((port, path))
+}
+
+/// The Chrome holding this profile, from the lock it leaves in it ("<host>-<pid>"), if it is running.
+fn holder(profile: &Path) -> Option<u32> {
+    let target = fs::read_link(profile.join("SingletonLock")).ok()?;
+    let pid: u32 = target.to_string_lossy().rsplit('-').next()?.parse().ok()?;
+    process_alive(pid).then_some(pid)
+}
+
+fn process_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        Command::new("kill").args(["-0", &pid.to_string()]).stderr(Stdio::null()).status().map(|s| s.success()).unwrap_or(false)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        false
+    }
+}
+
+/// Ends a Chrome of this profile: asked first, then made to.
+fn end_process(pid: u32) {
+    #[cfg(unix)]
+    {
+        let _ = Command::new("kill").args(["-TERM", &pid.to_string()]).stderr(Stdio::null()).status();
+        let until = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < until && process_alive(pid) {
+            thread::sleep(Duration::from_millis(100));
+        }
+        if process_alive(pid) {
+            let _ = Command::new("kill").args(["-KILL", &pid.to_string()]).stderr(Stdio::null()).status();
+            thread::sleep(Duration::from_millis(300));
+        }
+    }
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"]).stdout(Stdio::null()).stderr(Stdio::null()).status();
     }
 }
 
 /// Start Chrome with its own profile and a debugging port it picks, and wait for it to say which.
+///
+/// The profile is this app's alone, so a Chrome already on it is one of ours that outlived the run that
+/// started it (2026-11-09: the bridge restarted, its Chrome did not; the new one handed over to it and
+/// ended at once, and the browser was refused until somebody quit Chrome by hand). It is taken over when
+/// its debugging port answers, and ended — then started again — when it does not.
 pub fn start_chrome(exe: &Path, profile: &Path, extra: &[String]) -> io::Result<Chrome> {
     fs::create_dir_all(profile)?;
-    let active = profile.join("DevToolsActivePort");
-    let _ = fs::remove_file(&active);
-    let child = Command::new(exe)
-        .arg("--remote-debugging-port=0")
-        .arg(format!("--user-data-dir={}", profile.display()))
-        .args(["--no-first-run", "--no-default-browser-check"])
-        .args(extra)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
-    let mut started = Chrome { child, port: 0, ws_path: String::new() };
-    let until = Instant::now() + Duration::from_secs(30);
-    while Instant::now() < until {
-        if let Some(status) = started.child.try_wait()? {
-            return Err(io::Error::other(format!(
-                "Chrome ended at once ({status}) — is another Chrome using {} already?",
-                profile.display()
-            )));
+    if let Some((port, ws_path)) = read_active(profile) {
+        if port_answers(port) && !version(port).is_empty() {
+            return Ok(Chrome { child: None, pid: holder(profile), profile: profile.to_path_buf(), port, ws_path });
         }
-        if let Ok(text) = fs::read_to_string(&active) {
-            let mut lines = text.lines();
-            if let (Some(port), Some(path)) = (lines.next(), lines.next()) {
-                if let Ok(port) = port.trim().parse() {
-                    started.port = port;
-                    started.ws_path = path.trim().to_string();
-                    return Ok(started);
+    }
+    for attempt in 0..2 {
+        let active = profile.join("DevToolsActivePort");
+        let _ = fs::remove_file(&active);
+        let child = Command::new(exe)
+            .arg("--remote-debugging-port=0")
+            .arg(format!("--user-data-dir={}", profile.display()))
+            .args(["--no-first-run", "--no-default-browser-check"])
+            .args(extra)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+        let mut started = Chrome { child: Some(child), pid: None, profile: profile.to_path_buf(), port: 0, ws_path: String::new() };
+        let until = Instant::now() + Duration::from_secs(30);
+        let mut ended = None;
+        while Instant::now() < until {
+            if let Some(status) = started.child.as_mut().unwrap().try_wait()? {
+                ended = Some(status);
+                break;
+            }
+            if let Some((port, path)) = read_active(profile) {
+                started.port = port;
+                started.ws_path = path;
+                return Ok(started);
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        let Some(status) = ended else {
+            return Err(io::Error::other("Chrome did not open its debugging port within 30 seconds"));
+        };
+        // Handed over to a Chrome already on this profile: that one is ended, and this tried again.
+        match holder(profile) {
+            Some(pid) if attempt == 0 => {
+                end_process(pid);
+                for lock in ["SingletonLock", "SingletonCookie", "SingletonSocket"] {
+                    let _ = fs::remove_file(profile.join(lock));
                 }
             }
+            Some(_) => return Err(io::Error::other("another Chrome holds this computer's browser profile and would not end")),
+            None => return Err(io::Error::other(format!("Chrome ended at once ({status})"))),
         }
-        thread::sleep(Duration::from_millis(100));
     }
-    Err(io::Error::other("Chrome did not open its debugging port within 30 seconds"))
+    Err(io::Error::other("Chrome could not be started"))
 }
 
 /// The browser this computer lends: started when the connection begins, and started again when an
@@ -214,7 +304,7 @@ impl Browser {
     pub fn ensure(&self) -> io::Result<(u16, String, bool)> {
         let mut now = self.now.lock().unwrap();
         if let Some(c) = now.as_mut() {
-            if matches!(c.child.try_wait(), Ok(None)) {
+            if c.alive() {
                 return Ok((c.port, c.ws_path.clone(), false));
             }
         }
@@ -229,7 +319,7 @@ impl Browser {
     pub fn running(&self) -> Option<(u16, String)> {
         let mut now = self.now.lock().unwrap();
         let c = now.as_mut()?;
-        matches!(c.child.try_wait(), Ok(None)).then(|| (c.port, c.ws_path.clone()))
+        c.alive().then(|| (c.port, c.ws_path.clone()))
     }
 
     /// Close the Chrome it started (Disconnect, or the app quitting).
