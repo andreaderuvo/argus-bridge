@@ -67,6 +67,30 @@ jobs:
       - name: Linux toolkits
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      # One code-signing certificate, always the same (ours, self-signed: ~/.keys/argus-bridge-codesign.*).
+      # Ad-hoc signing gave every build a new identity, so macOS forgot every "Allow" at each update and
+      # asked again — with an agent waiting on the Mac until somebody pressed it (2026-11-09). Signed with
+      # one certificate, an "Always allow" given once holds across updates. Skipped without the secret.
+      - name: Code-signing certificate (macOS)
+        if: runner.os == 'macOS' && env.MACOS_CODESIGN_P12 != ''
+        env:
+          MACOS_CODESIGN_P12: ${{ secrets.MACOS_CODESIGN_P12 }}
+          MACOS_CODESIGN_PASSWORD: ${{ secrets.MACOS_CODESIGN_PASSWORD }}
+        run: |
+          echo "$MACOS_CODESIGN_P12" | base64 --decode > "$RUNNER_TEMP/cs.p12"
+          K="$RUNNER_TEMP/sign.keychain-db"
+          security create-keychain -p ci "$K"
+          security set-keychain-settings -lut 7200 "$K"
+          security unlock-keychain -p ci "$K"
+          security import "$RUNNER_TEMP/cs.p12" -k "$K" -P "$MACOS_CODESIGN_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k ci "$K" >/dev/null
+          security list-keychains -d user -s "$K" $(security list-keychains -d user | tr -d '"')
+          # Self-signed: trusted for code signing on this runner, or codesign will not use it.
+          openssl pkcs12 -in "$RUNNER_TEMP/cs.p12" -nokeys -passin "pass:$MACOS_CODESIGN_PASSWORD" -legacy -out "$RUNNER_TEMP/cs.pem" 2>/dev/null \
+            || openssl pkcs12 -in "$RUNNER_TEMP/cs.p12" -nokeys -passin "pass:$MACOS_CODESIGN_PASSWORD" -out "$RUNNER_TEMP/cs.pem"
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$RUNNER_TEMP/cs.pem"
+          security find-identity -p codesigning "$K"
+          echo "APPLE_SIGNING_IDENTITY=argus-bridge" >> "$GITHUB_ENV"
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -80,6 +104,14 @@ jobs:
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
           releaseName: argus-bridge ${{ github.ref_name }}
           releaseDraft: false
+      - name: The app is signed with our certificate (macOS)
+        if: runner.os == 'macOS' && env.APPLE_SIGNING_IDENTITY != ''
+        run: |
+          app=$(ls -d app/src-tauri/target/*/release/bundle/macos/*.app | head -1)
+          codesign -dvv "$app" 2>&1 | tee "$RUNNER_TEMP/sig.txt"
+          grep -q "Authority=argus-bridge" "$RUNNER_TEMP/sig.txt"
+          grep -q "Identifier=io.github.andreaderuvo.argus-sync" "$RUNNER_TEMP/sig.txt"
+          codesign --verify --deep --strict "$app"
       # Every build's installers, downloadable from the run's page (a tag also attaches them to a release).
       - uses: actions/upload-artifact@v4
         with:
