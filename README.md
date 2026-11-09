@@ -23,6 +23,10 @@ settings already made all keep working.
 - **Nothing is lost**: a file changed on both sides is kept twice (`report (conflict from laptop …).pdf`);
   a delete goes to the trash (yours, or Argus's); a file over the size limit (500 MB by default) waits
   to be asked for.
+- **Never a mass delete**: a synced folder that is gone (moved, renamed, a disk not mounted) is an
+  error, never made again empty; a round that would empty the folder or delete a quarter of it at once
+  (20 files or more) deletes nothing on the server and says so. Argus also refuses bulk deletes through
+  a key. A folder moved with *Move on this computer…* is followed.
 
 ## This computer, connected to Argus
 
@@ -39,6 +43,12 @@ What it lends is three switches, **all off until you turn them on**:
 In Argus: Settings → Computers → *Connect a computer…* gives an `argus-bridge://computer?…` link;
 open it here. From a terminal: `argus-bridge computer '<link>' --browser --terminal --actions`.
 Disconnecting in Argus closes everything this computer lent.
+
+- A question for you (*Do it / No*) arrives as a notification of the system, answered on it (macOS).
+- With Terminal or Actions on and no **Full Disk Access**, macOS stops an agent's command at each
+  protected folder to ask "Allow?": the *This computer* card says so and opens the setting.
+- A Chrome left on the browser profile by an earlier run is taken over, or ended and started again.
+- **Open Argus** opens Argus in a window of the app.
 
 ## Cross-OS, by design
 
@@ -58,12 +68,17 @@ Download the installer for your system from the
 
 | system | file | first launch |
 |---|---|---|
-| macOS (Apple silicon and Intel) | `.dmg` | the app is not signed by Apple yet: right-click it → **Open** → **Open**, once |
+| macOS (Apple silicon and Intel) | `.dmg` | signed with the project's own certificate, not Apple's: right-click it → **Open** → **Open**, once (macOS 15: *System Settings → Privacy & Security → Open Anyway*). Every version carries the same signature, so an **Always allow** holds across updates |
 | Windows 10/11 | `.exe` (or `.msi`) | SmartScreen may warn: **More info** → **Run anyway** |
 | Linux | `.AppImage`, `.deb` or `.rpm` | `chmod +x` the AppImage, or install the package |
 
 No administrator rights are needed on macOS (drag it into your own Applications) or with the
 Windows `.exe`. Then, in Argus, open a folder's menu → **Sync to your computer…** and click the link.
+
+**Updates** are offered in a dialog — *Update and restart* or *Later* — unless *Install updates by
+themselves* is ticked at the foot of the window; *Check for updates* is there and in the menu. Only
+versions signed by the project's key are installed. The **language** follows the system's, or the one
+chosen at the foot of the window (English, Italiano, Español, Français).
 
 It needs an Argus with the sync routes (`/api/sync/*`), from the release after 2026-10-15 onwards.
 
