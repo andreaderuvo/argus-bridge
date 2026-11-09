@@ -224,6 +224,7 @@ fn note(issue: &Issue) -> Option<serde_json::Value> {
         Issue::BadName { remote, why } => serde_json::json!({"kind": "name", "path": remote, "why": why}),
         Issue::CaseClash { kept, skipped } => serde_json::json!({"kind": "case", "kept": kept, "skipped": skipped}),
         Issue::FileVersusFolder { path } => serde_json::json!({"kind": "type", "path": path}),
+        Issue::HeldDeletes { count } => serde_json::json!({"kind": "held", "count": count}),
     })
 }
 
@@ -273,6 +274,11 @@ fn worker(app: AppHandle, shared: Arc<Shared>, rx: mpsc::Receiver<Wake>) {
 
         for p in &pairs {
             let entry = engines.entry(p.id.clone()).or_insert_with(|| (make_engine(&shared.dir, p), Instant::now() - POLL, true));
+            // Moved on this computer: the engine follows. Kept on the old place, it found that folder gone —
+            // and, before 0.1.7, made it again empty and deleted every file on the server.
+            if entry.0.settings.root != p.local {
+                *entry = (make_engine(&shared.dir, p), Instant::now() - POLL, true);
+            }
             entry.0.settings.big = p.big;
             entry.0.settings.wanted = p.wanted.clone();
             if p.paused || paused_all {
@@ -595,15 +601,22 @@ fn start_machine(app: &AppHandle, shared: &Arc<Shared>) {
             }
         };
         // A bell of Argus — an agent finished, failed or asks — as a notification of this system.
+        // A question (Do it / No) is answered in the notification itself, where the system can.
         let bell_app = app.clone();
-        let bell = move |why: &str, session: &str, text: &str| {
+        let bell_shared = shared.clone();
+        let bell = move |told: &computer::Told, answer: Option<computer::Answer>| {
             use tauri_plugin_notification::NotificationExt;
-            let title = match why {
-                "asking" => say_plain("{session} is waiting for you", session),
-                "failed" => say_plain("{session} failed", session),
-                _ => say_plain("{session} has finished", session),
+            let title = match told.why.as_str() {
+                "asking" => say_plain("{session} is waiting for you", &told.session),
+                "failed" => say_plain("{session} failed", &told.session),
+                _ => say_plain("{session} has finished", &told.session),
             };
-            let _ = bell_app.notification().builder().title(title).body(text).show();
+            if let Some(answer) = answer {
+                if ask_in_notification(&bell_app, &bell_shared, title.clone(), told, answer) {
+                    return;
+                }
+            }
+            let _ = bell_app.notification().builder().title(title).body(&told.text).show();
         };
         let ended = computer::keep(&setup, browser.as_ref(), &stop, &said, &bell);
         if let Some(b) = &browser {
@@ -665,6 +678,36 @@ fn machine_forget(app: AppHandle, shared: tauri::State<Arc<Shared>>) -> Res<()> 
 fn say_plain(template: &str, session: &str) -> String {
     let who = if session.is_empty() { "Argus" } else { session };
     words::tr(template).replace("{session}", who)
+}
+
+/// A question of Argus as a notification with its answers on it: the first option ("Do it") is the
+/// notification's button, the second ("No") its close button, and a click on the text opens Argus.
+/// Only on a Mac (NSUserNotification); elsewhere false, and the question is shown as a plain
+/// notification, answered in Argus.
+#[cfg(target_os = "macos")]
+fn ask_in_notification(app: &AppHandle, shared: &Arc<Shared>, title: String, told: &argus_sync_core::computer::Told, answer: argus_sync_core::computer::Answer) -> bool {
+    use mac_notification_sys::{MainButton, Notification, NotificationResponse};
+    let (Some(yes), Some(no)) = (told.options.first().cloned(), told.options.get(1).cloned()) else { return false };
+    let (text, app, shared) = (told.text.clone(), app.clone(), shared.clone());
+    std::thread::spawn(move || {
+        let _ = mac_notification_sys::set_application(&app.config().identifier);
+        let said = Notification::new().title(&title).message(&text)
+            .main_button(MainButton::SingleAction(&yes)).close_button(&no).wait_for_click(true).send();
+        match said {
+            Ok(NotificationResponse::ActionButton(_)) => answer(yes),
+            Ok(NotificationResponse::CloseButton(_)) => answer(no),
+            Ok(NotificationResponse::Click) => {
+                let _ = open_argus_window(&app, &shared);
+            }
+            _ => {}
+        }
+    });
+    true
+}
+
+#[cfg(not(target_os = "macos"))]
+fn ask_in_notification(_: &AppHandle, _: &Arc<Shared>, _: String, _: &argus_sync_core::computer::Told, _: argus_sync_core::computer::Answer) -> bool {
+    false
 }
 
 /// Argus itself, in a window of this app: a Dock icon of its own, no browser tabs. The address is

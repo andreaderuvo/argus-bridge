@@ -54,6 +54,7 @@ const IT = {
 
   '{skipped} differs from {kept} only by upper/lower case: this computer keeps {kept}': '{skipped} differisce da {kept} solo per maiuscole/minuscole: questo computer tiene {kept}',
   '{path} cannot exist on this computer: {why}': '{path} non può esistere su questo computer: {why}',
+  '{count} files are gone from this folder and were not deleted on the server: too many at once, or the folder is empty. Put them back, or delete them in Argus if you meant it.': '{count} file mancano da questa cartella e non sono stati cancellati sul server: troppi in una volta, o la cartella è vuota. Rimettili al loro posto, oppure cancellali in Argus se era voluto.',
   '{path} is a file on one side and a folder on the other: left alone': '{path} è un file da una parte e una cartella dall’altra: lasciato com’è',
   'a character Windows does not allow': 'un carattere che Windows non ammette',
   'a name ending with a dot or a space': 'un nome che finisce con un punto o uno spazio',
@@ -179,6 +180,7 @@ const ES = {
 
   '{skipped} differs from {kept} only by upper/lower case: this computer keeps {kept}': '{skipped} solo difiere de {kept} en mayúsculas/minúsculas: este ordenador conserva {kept}',
   '{path} cannot exist on this computer: {why}': '{path} no puede existir en este ordenador: {why}',
+  '{count} files are gone from this folder and were not deleted on the server: too many at once, or the folder is empty. Put them back, or delete them in Argus if you meant it.': 'Faltan {count} archivos en esta carpeta y no se han borrado en el servidor: demasiados a la vez, o la carpeta está vacía. Vuelve a ponerlos, o bórralos en Argus si era lo que querías.',
   '{path} is a file on one side and a folder on the other: left alone': '{path} es un archivo en un lado y una carpeta en el otro: se deja como está',
   'a character Windows does not allow': 'un carácter que Windows no admite',
   'a name ending with a dot or a space': 'un nombre que termina en punto o espacio',
@@ -266,6 +268,7 @@ const FR = {
 
   '{skipped} differs from {kept} only by upper/lower case: this computer keeps {kept}': '{skipped} ne diffère de {kept} que par la casse : cet ordinateur garde {kept}',
   '{path} cannot exist on this computer: {why}': '{path} ne peut pas exister sur cet ordinateur : {why}',
+  '{count} files are gone from this folder and were not deleted on the server: too many at once, or the folder is empty. Put them back, or delete them in Argus if you meant it.': '{count} fichiers manquent dans ce dossier et n’ont pas été supprimés sur le serveur : trop à la fois, ou le dossier est vide. Remettez-les, ou supprimez-les dans Argus si c’était voulu.',
   '{path} is a file on one side and a folder on the other: left alone': '{path} est un fichier d’un côté et un dossier de l’autre : laissé tel quel',
   'a character Windows does not allow': 'un caractère que Windows n’accepte pas',
   'a name ending with a dot or a space': 'un nom finissant par un point ou un espace',

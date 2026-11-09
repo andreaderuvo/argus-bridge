@@ -225,3 +225,64 @@ fn a_key_taken_back_says_so() {
 fn walk(dir: &Path) -> Vec<String> {
     walkdir::WalkDir::new(dir).into_iter().flatten().map(|e| e.path().to_string_lossy().into_owned()).collect()
 }
+
+#[test]
+fn a_folder_moved_or_emptied_here_never_empties_the_server() {
+    // 2026-11-09: a folder synced, then moved on the computer; the engine still on the old place made it
+    // again, empty, and deleted all 14,503 files on the server. Now: gone → an error, nothing deleted;
+    // emptied or a quarter gone at once → held and said; one file deleted → deleted, as before.
+    let Some(a) = start() else { return };
+    let work = tempfile::tempdir().unwrap();
+    std::env::set_var("XDG_DATA_HOME", work.path().join("xdg"));
+    let srv = a.root.join("valeferri");
+    fs::create_dir_all(srv.join("originali")).unwrap();
+    for i in 0..40 {
+        fs::write(srv.join(format!("originali/f{i}.txt")), format!("file {i}")).unwrap();
+    }
+    let here = work.path().join("valeferri3");
+    let key = a.key("valeferri", true);
+    let mut e = engine(&a, &key, &here, 0);
+    round(&mut e);
+    assert_eq!(fs::read_dir(here.join("originali")).unwrap().count(), 40);
+    let on_server = || fs::read_dir(srv.join("originali")).unwrap().count();
+
+    // Moved away (renamed in the Finder, or a disk not mounted): an error, and the folder not made again.
+    fs::rename(&here, work.path().join("vale ferri 3")).unwrap();
+    let err = e.sync_once(&mut |_| {}).unwrap_err();
+    assert!(err.to_string().contains("gone"), "{err}");
+    assert!(!here.exists(), "the old place is not made again, empty");
+    assert_eq!(on_server(), 40, "nothing deleted on the server");
+    fs::rename(work.path().join("vale ferri 3"), &here).unwrap();
+
+    // Emptied: held, said, nothing deleted.
+    fs::remove_dir_all(here.join("originali")).unwrap();
+    let (_, issues) = round(&mut e);
+    assert!(issues.iter().any(|i| matches!(i, Issue::HeldDeletes { count: 40 })), "{issues:?}");
+    assert_eq!(on_server(), 40);
+    // Still held next round; and the files come back from the server only if asked — here they are put back.
+    round(&mut e);
+    assert_eq!(on_server(), 40);
+    fs::create_dir_all(here.join("originali")).unwrap();
+    for i in 0..40 {
+        fs::write(here.join(format!("originali/f{i}.txt")), format!("file {i}")).unwrap();
+    }
+    round(&mut e);
+    assert_eq!(on_server(), 40);
+
+    // A quarter gone at once: held too.
+    for i in 0..25 {
+        fs::remove_file(here.join(format!("originali/f{i}.txt"))).unwrap();
+    }
+    let (_, issues) = round(&mut e);
+    assert!(issues.iter().any(|i| matches!(i, Issue::HeldDeletes { .. })), "{issues:?}");
+    assert_eq!(on_server(), 40);
+
+    // One file deleted by hand: deleted on the server, as always (into its trash).
+    for i in 0..25 {
+        fs::write(here.join(format!("originali/f{i}.txt")), format!("file {i}")).unwrap();
+    }
+    round(&mut e);
+    fs::remove_file(here.join("originali/f39.txt")).unwrap();
+    round(&mut e);
+    assert_eq!(on_server(), 39);
+}

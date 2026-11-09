@@ -66,17 +66,28 @@ impl Engine {
         if let Some(entries) = fresh {
             self.cache = Some(entries);
         }
-        fs::create_dir_all(&self.settings.root)?;
+        // A folder that synced before and is gone now (moved, renamed, a disk not mounted) is never made
+        // again, empty: read as "every file deleted here", it deleted them all on the server — 14,503
+        // files of one folder on 2026-11-09. Only a folder never synced is made.
+        let known_files = self.state.files.values().filter(|k| !k.dir).count();
+        if !self.settings.root.is_dir() {
+            if known_files > 0 {
+                return Err(RemoteError::Io(std::io::Error::new(std::io::ErrorKind::NotFound,
+                    format!("the folder on this computer is gone ({}): nothing was deleted on the server — move it back, or move it in argus-bridge", self.settings.root.display()))));
+            }
+            fs::create_dir_all(&self.settings.root)?;
+        }
         let ci = *self.case_insensitive.get_or_insert_with(|| local::case_insensitive(&self.settings.root));
         let here = local::scan(&self.settings.root)?;
         let entries = self.cache.clone().unwrap_or_default();
-        let plan = plan::plan(&entries, &here, &self.state, &Options {
+        let mut plan = plan::plan(&entries, &here, &self.state, &Options {
             case_insensitive: ci,
             windows_names: cfg!(windows),
             big: self.settings.big,
             wanted: &self.settings.wanted,
             can_write: hello.write,
         });
+        hold_mass_deletes(&mut plan, &here, known_files);
         let mut report = Report { issues: plan.issues, idle: plan.actions.is_empty(), events: vec![] };
         let mut touched_remote = false;
         for action in plan.actions {
@@ -293,6 +304,27 @@ impl Engine {
 }
 
 /// This computer's name, for conflict copies.
+/// Deleting on the server needs files deleted here one by one, not all at once: an empty folder here, or a
+/// quarter of what was synced gone in one round (at least `MASS` files), deletes nothing on the server and
+/// says so. Deleting that much is done in Argus, where it is seen. The files stay known, so they are held
+/// every round until they come back (then nothing happens) or are deleted on the server too.
+pub const MASS: usize = 20;
+
+pub fn hold_mass_deletes(plan: &mut plan::Plan, here: &BTreeMap<String, LocalEntry>, known_files: usize) {
+    let is_delete = |a: &Action| matches!(a, Action::DeleteRemote { .. } | Action::RmdirRemote { .. });
+    let deletes = plan.actions.iter().filter(|a| matches!(a, Action::DeleteRemote { .. })).count();
+    if deletes == 0 {
+        return;
+    }
+    let files_here = here.values().filter(|e| !e.dir).count();
+    let emptied = files_here == 0 && deletes >= 2;
+    let many = deletes >= MASS && deletes * 4 >= known_files;
+    if emptied || many {
+        plan.actions.retain(|a| !is_delete(a));
+        plan.issues.push(Issue::HeldDeletes { count: deletes });
+    }
+}
+
 pub fn host_name() -> String {
     std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))

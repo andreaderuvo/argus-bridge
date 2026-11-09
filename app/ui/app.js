@@ -200,6 +200,7 @@ function noteText(n) {
       : n.why.startsWith('a name ending') ? 'a name ending with a dot or a space' : 'a name Windows reserves';
     return t('{path} cannot exist on this computer: {why}', { path: n.path, why: t(why) });
   }
+  if (n.kind === 'held') return t('{count} files are gone from this folder and were not deleted on the server: too many at once, or the folder is empty. Put them back, or delete them in Argus if you meant it.', n);
   if (n.kind === 'type') return t('{path} is a file on one side and a folder on the other: left alone', n);
   return JSON.stringify(n);
 }

@@ -126,6 +126,7 @@ fn say(name: &str, ev: &Event) {
 fn tell(name: &str, issues: &[Issue], told: &mut std::collections::BTreeSet<String>) {
     for i in issues {
         let line = match i {
+            Issue::HeldDeletes { count } => format!("{count} files are gone here and were NOT deleted on the server (too many at once, or the folder here is empty): delete them in Argus if you meant it"),
             Issue::Big { remote, size } => format!("{remote} is {} MB — `argus-bridge fetch {name} '{remote}'` to bring it", size / 1_000_000),
             Issue::BadName { remote, why } => format!("{remote} cannot exist here: {why}"),
             Issue::CaseClash { kept, skipped } => format!("{skipped} differs from {kept} only by case: this computer keeps {kept}"),
@@ -228,7 +229,7 @@ fn computer(dir: &PathBuf, args: &[String]) -> Res {
     };
     let stop = std::sync::atomic::AtomicBool::new(false);
     let ended = computer::keep(&setup, browser.as_ref(), &stop, &|said| println!("{said}"),
-                               &|why, session, text| println!("[{why}] {session}: {text}"));
+                               &|b, _| println!("[{}] {}: {}", b.why, b.session, b.text));
     if let Some(b) = &browser {
         b.stop();
     }

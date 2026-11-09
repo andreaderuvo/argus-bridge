@@ -40,6 +40,9 @@ pub enum Issue {
     FileVersusFolder { path: String },
     /// Over the size limit, waiting to be asked for.
     Big { remote: String, size: u64 },
+    /// Files gone from this computer that were NOT deleted on the server: too many at once, or the
+    /// folder here is empty — a folder moved, renamed or on a disk not mounted looks exactly like that.
+    HeldDeletes { count: usize },
 }
 
 #[derive(Debug, Default)]

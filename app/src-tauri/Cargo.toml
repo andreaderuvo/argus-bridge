@@ -1,6 +1,6 @@
 [package]
 name = "argus-sync-app"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 license = "MIT"
 description = "argus-bridge: a folder of an Argus server, kept in sync with a folder on this computer"
@@ -34,6 +34,10 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 dirs = "5"
 trash = "5"
 sys-locale = "0.3"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Already under tauri-plugin-notification; used directly for a notification with Do it / No on it.
+mac-notification-sys = "0.6"
 
 [profile.release]
 lto = true

@@ -296,8 +296,30 @@ fn hello(setup: &Setup, offers: Offers, browser: Option<(u16, String)>) -> Value
 }
 
 /// A bell rung in Argus — an agent finished, failed, or asks — for this computer to show as a
-/// notification of its own: (why, session, text).
-pub type Bell<'a> = &'a dyn Fn(&str, &str, &str);
+/// notification of its own.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Told {
+    pub why: String,
+    pub session: String,
+    pub text: String,
+    /// A question of Argus (`asks`) this bell is: its id and the answers offered ("Do it", "No").
+    pub ask: String,
+    pub options: Vec<String>,
+}
+
+/// How a question is answered from here: one of its `options`, sent back to Argus.
+pub type Answer = Box<dyn FnOnce(String) + Send>;
+
+/// Shows a bell; given an `Answer` when it is a question that can be answered from the notification.
+pub type Bell<'a> = &'a dyn Fn(&Told, Option<Answer>);
+
+/// A `bell` frame read: what it says, and the question it carries if any.
+pub fn told(frame: &Value) -> Told {
+    let get = |k: &str| frame.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    let options = frame.get("options").and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
+    Told { why: get("why"), session: get("session"), text: get("text"), ask: get("ask"), options }
+}
 
 /// Carry this computer to Argus until disconnected there, `stop` is set, or the connection goes.
 pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, say: &dyn Fn(&str), bell: Bell) -> Ended {
@@ -438,8 +460,14 @@ pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, 
                         }
                     }
                     Some("bell") => {
-                        let get = |k: &str| frame.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-                        bell(&get("why"), &get("session"), &get("text"));
+                        let told = told(&frame);
+                        let answer: Option<Answer> = if told.ask.is_empty() || told.options.is_empty() {
+                            None
+                        } else {
+                            let (out, ask) = (to_server.clone(), told.ask.clone());
+                            Some(Box::new(move |said: String| { let _ = out.send(json!({"op": "answer", "ask": ask, "answer": said})); }))
+                        };
+                        bell(&told, answer);
                     }
                     Some("bye") => break Ended::GivenBack,
                     _ => {}
