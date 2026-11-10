@@ -8,6 +8,12 @@ PHONE_WIDE = {"width": 420, "height": 760, "deviceScaleFactor": 1, "mobile": Fal
 CALLS = "window.__mock.calls.map(c => c[0])"
 
 
+
+def to(page, name):
+    """A page of the window, chosen in its sidebar as a person does."""
+    page.wait(f"!!document.querySelector('#nav [data-page={name}]')", what="the sidebar")
+    page.click(f"#nav [data-page={name}]")
+
 def test_every_folder_with_its_state_conflicts_and_waiting_files(make_page):
     page: Page = make_page()
     assert page.count(".card") == 2
@@ -78,7 +84,7 @@ def test_italian_and_light(make_page):
     text = page.eval("document.body.textContent")
     for words in ("Collega una cartella", "Aggiornata", "Tieni la mia", "In attesa di conferma", "su lab-server"):
         assert words in text, words
-    assert page.eval("getComputedStyle(document.body).backgroundColor") == "rgb(246, 248, 250)"
+    assert page.eval("getComputedStyle(document.body).backgroundColor") == "rgb(246, 247, 249)"
 
 
 def test_narrow_window_has_no_sideways_scroll(make_page):
@@ -110,18 +116,20 @@ def test_a_link_to_connect_this_computer_asks_what_it_lends_all_off(make_page):
     page.click("#sheet .switch[data-offer=\"terminal\"]")
     assert page.eval("document.querySelector('#sheet .switch[data-offer=\"terminal\"] input').checked"), "switched on"
     page.click("#sheet .foot .primary")
-    page.wait("!!document.querySelector('.card.machine')", what="this computer's card")
+    page.wait("!!document.querySelector('.group.machine')", what="this computer's page")
     calls = page.eval("JSON.stringify(window.__mock.calls)")
     assert '"machine_link",{"link":"argus-sync://computer?url=http%3A%2F%2Flab-server%3A8090&key=ac_x&name=lap684","browser":false,"terminal":true,"actions":false}' in calls, calls
 
 
 def test_this_computers_switches_and_connection(make_page):
     page = make_page("?machine")
-    card = "document.querySelector('.card.machine')"
+    to(page, "computer")
+    card = "document.querySelector('.group.machine')"
     page.wait(f"!!{card}", what="this computer")
-    assert "Connected" in page.eval(f"{card}.textContent") and "on lab-server" in page.eval(f"{card}.textContent")
+    head = page.eval("document.querySelector('.pagehead').textContent")
+    assert "Connected" in head and "lab-server" in head, head
     assert page.eval(f"[...{card}.querySelectorAll('.switch input')].map(i => i.checked).join()") == "true,true,false"
-    page.click(".card.machine .switch[data-offer=\"actions\"]")
+    page.click(".group.machine .switch[data-offer=\"actions\"] .toggle")
     page.wait("window.__mock.calls.some(c => c[0] === 'machine_set' && c[1].actions === true && c[1].on === true)", what="actions on")
     page.click_text("Disconnect")
     page.wait("window.__mock.calls.some(c => c[0] === 'machine_set' && c[1].on === false)", what="off")
@@ -162,12 +170,14 @@ def test_a_mac_without_full_disk_access_is_told_once_how_to_stop_the_questions(m
     Access, the card says why and opens the setting; with it given, or nothing lent that runs commands,
     nothing is said."""
     page = make_page("?machine&nofulldisk")
-    note = "document.querySelector('.card.machine .fulldisk')"
+    to(page, "computer")
+    note = "document.querySelector('.fulldisk')"
     page.wait(f"!!{note}", what="the note")
-    page.click(".card.machine .fulldisk button")
+    page.click(".fulldisk button")
     page.wait("window.__mock.calls.some(c => c[0] === 'open_full_disk_settings')", what="the setting opened")
     page = make_page("?machine")
-    page.wait("!!document.querySelector('.card.machine')")
+    to(page, "computer")
+    page.wait("!!document.querySelector('.group.machine')")
     assert page.eval("!document.querySelector('.fulldisk')")
 
 
@@ -175,21 +185,23 @@ def test_updates_are_asked_first_and_checked_by_hand(make_page):
     """"A dialog: a new version is out, update? — someone may not want it automatic; and a button to
     check" (2026-11-09). Asked first by default; the switch and the button reach the app."""
     page = make_page()
-    page.wait("!!document.querySelector('.aboutrow')", what="the foot of the window")
-    assert "argus-bridge 0.1.1" in page.eval("document.querySelector('.aboutrow').textContent")
-    assert page.eval("document.querySelector('.aboutrow .autoupd input').checked") is False
-    page.click(".aboutrow button")
+    to(page, "settings")
+    page.wait("!!document.getElementById('checkupdates')", what="the settings")
+    assert "argus-bridge 0.1.1" in page.eval("document.querySelector('#main').textContent")
+    assert page.eval("document.getElementById('autoupdate').checked") is False
+    page.click("#checkupdates")
     page.wait("window.__mock.calls.some(c => c[0] === 'check_updates')", what="checked")
-    page.click(".aboutrow .autoupd input")
+    page.click("#autoupdate")
     page.wait("window.__mock.calls.some(c => c[0] === 'set_auto_update' && c[1].on === true)", what="automatic")
 
 
 def test_the_language_is_chosen_at_the_foot_of_the_window(make_page):
     """"How is the language changed in argus-bridge?" (2026-11-09): it followed the system's only."""
     page = make_page()
+    to(page, "settings")
     page.wait("!!document.getElementById('language')", what="the choice")
     page.eval("(() => { const s = document.getElementById('language'); s.value = 'it'; s.dispatchEvent(new Event('change')); })()")
-    page.wait("document.querySelector('#add')?.textContent.includes('Collega')", what="in Italian after the reload")
+    page.wait("document.querySelector('#nav [data-page=folders]')?.textContent.includes('Cartelle')", what="in Italian after the reload")
     assert page.eval("document.getElementById('language').value") == "it"
 
 
@@ -197,12 +209,12 @@ def test_how_the_lent_browser_starts_is_the_persons_to_set(make_page):
     """"Can these be configured, so the user controls the harness?" (2026-11-10): hidden automation (on
     by default), which browser, more switches — saved for the browser's next start."""
     page = make_page("?machine")
+    to(page, "computer")
     page.wait("!!document.querySelector('.browserset')", what="the browser's settings")
-    page.eval("document.querySelector('.browserset').open = true")
     assert page.eval("document.querySelector('.browserset input[type=checkbox]').checked") is True
     page.eval("""(() => { const s = document.getElementById('browserexe'); s.value = s.options[2].value; s.dispatchEvent(new Event('change'));
         document.getElementById('browserflags').value = '--lang=it'; document.querySelector('.browserset input[type=checkbox]').click(); })()""")
-    page.click(".browserset .acts button")
+    page.eval("[...document.querySelectorAll('.browserset button')].find(b => b.textContent.trim() === 'Save').click()")
     page.wait("window.__mock.calls.some(c => c[0] === 'machine_browser' && c[1].hideAutomation === false && c[1].flags === '--lang=it' && c[1].exe.includes('Brave'))", what="saved")
 
 
@@ -210,10 +222,10 @@ def test_logins_for_agents_are_kept_and_switched_from_the_window(make_page):
     """"Read the passwords from there" (2026-11-10): the switch (off by default), a login added by hand
     straight to the keychain, removed — names and sites only on screen, never a password."""
     page = make_page("?machine")
-    page.wait("!!document.querySelector('.sect.logins')", what="the logins")
-    page.eval("document.querySelector('.sect.logins').open = true")
-    assert page.eval("document.querySelector('.sect.logins input[type=checkbox]').checked") is False
-    page.click(".sect.logins label.check input")
+    to(page, "logins")
+    page.wait("!!document.querySelector('.logins')", what="the logins")
+    assert page.eval("document.querySelector('.logins input[type=checkbox]').checked") is False
+    page.click(".logins label.check")
     page.wait("window.__mock.calls.some(c => c[0] === 'logins_set' && c[1].enabled === true)", what="switched on")
     page.click_text("Add a login…")
     page.eval("""(() => { const v = (id, x) => { const e = document.getElementById(id); e.value = x; };
@@ -229,11 +241,13 @@ def test_a_section_opened_stays_open_and_typing_is_not_wiped_by_a_repaint(make_p
     """"When I open the sections they close again" (2026-11-10): the state arrives every few seconds and
     redrew everything. An opened section stays open; a field being typed in keeps what was typed."""
     page = make_page("?machine")
-    page.wait("!!document.querySelector('.browserset')", what="the browser's settings")
-    page.click(".browserset summary")
+    page.wait("!!document.querySelector('.card details')", what="a folder's activity")
+    page.click(".card details summary")
+    page.eval("new Promise((r) => setTimeout(r, 50))")       # the toggle event comes a moment after the click
+    page.eval("window.__mock.emit('snapshot', window.__mock.state)")
+    assert page.eval("document.querySelector('.card details').open") is True, "still open after a repaint"
+    to(page, "computer")
+    page.wait("!!document.getElementById('browserflags')", what="the browser's settings")
     page.eval("document.getElementById('browserflags').focus(); document.getElementById('browserflags').value = '--lang=it'")
     page.eval("window.__mock.emit('snapshot', window.__mock.state)")
     assert page.eval("document.getElementById('browserflags').value") == "--lang=it", "typing kept"
-    page.eval("document.getElementById('browserflags').blur()")
-    page.eval("window.__mock.emit('snapshot', window.__mock.state)")
-    assert page.eval("document.querySelector('.browserset').open") is True, "still open after a repaint"

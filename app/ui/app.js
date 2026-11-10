@@ -21,6 +21,17 @@ const PATHS = {
   globe: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z',
   terminal: 'M4 5h16v14H4zM7.5 10l2.5 2-2.5 2M12.5 14h4',
   play: 'M8 5.5v13l10.5-6.5z',
+  key: 'M14.5 4a5.5 5.5 0 1 1-4.7 8.4L4 18.2V21h3v-2h2v-2h2l1.4-1.4A5.5 5.5 0 0 1 14.5 4zM16 8.5h.01',
+  gear: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
+  check: 'M5 12.5l4.5 4.5L19 7.5',
+  trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13',
+  shield: 'M12 3l7 3v6c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6z',
+  external: 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
+  link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
+  chev: 'M9 6l6 6-6 6',
+  sync: 'M20 11a8 8 0 0 0-14.3-4.6L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.6L20 16M20 20v-4h-4',
+  pause: 'M8 5v14M16 5v14',
+  update: 'M12 3v12M7 10l5 5 5-5M4 21h16',
 };
 function icon(name) {
   const ns = 'http://www.w3.org/2000/svg';
@@ -114,36 +125,125 @@ function typing() {
 }
 document.addEventListener('focusout', () => setTimeout(() => { if (paintLater && !typing()) { paintLater = false; paint(); } }, 0));
 
+/** A switch: a real checkbox (keyboard, screen readers) under a drawn knob. */
+function toggle(checked, onchange, { disabled = false, id } = {}) {
+  const box = el('input', { type: 'checkbox', checked: !!checked, disabled, onchange: () => onchange(box.checked) });
+  if (id) box.id = id;
+  return el('label', { className: 'toggle' }, [box, el('span', { className: 'knob' })]);
+}
+
+/** One line of a settings panel: an icon, what it is (and a line under it), its control on the right. */
+function row({ glyph, title, hint, control, cls = '', on = false }) {
+  return el('div', { className: `row ${cls}${on ? ' on' : ''}` }, [
+    glyph ? (() => { const g = icon(glyph); g.classList.add('lead'); return g; })() : null,
+    el('div', { className: 'label' }, [el('b', { textContent: title }), hint ? el('span', { className: 'hint', textContent: hint }) : null]),
+    control ? el('div', { className: 'control' }, [].concat(control)) : null,
+  ]);
+}
+
+function group(caption, rows, note) {
+  return el('section', { className: 'group' }, [
+    caption ? el('div', { className: 'groupcap' }, [].concat(caption)) : null,
+    el('div', { className: 'panel' }, rows.filter(Boolean)),
+    note ? el('p', { className: 'groupnote', textContent: note }) : null,
+  ]);
+}
+
+function pageHead(title, lede, acts = [], extra = null) {
+  return el('header', { className: 'pagehead' }, [
+    el('h1', {}, [title, extra]),
+    acts.length ? el('div', { className: 'acts' }, acts) : null,
+    lede ? el('p', { className: 'lede', textContent: lede }) : null,
+  ]);
+}
+
+// ------------------------------------------------------------------------------------- pages
+
+/* Four pages, chosen in the sidebar (tabs along the top when the window is narrow); the one last open
+ * comes back. */
+const PAGES = () => [
+  ['folders', 'folder', t('Folders')],
+  ['computer', 'screen', t('This computer')],
+  ['logins', 'key', t('Logins')],
+  ['settings', 'gear', t('Settings')],
+];
+let page = (() => { try { return localStorage.getItem('argus-bridge.page') || 'folders'; } catch { return 'folders'; } })();
+function showPage(to) {
+  page = to;
+  try { localStorage.setItem('argus-bridge.page', to); } catch { /* remembered for this window only */ }
+  // Going elsewhere is leaving the field typed in: the page is drawn now, not when it is left.
+  if (typing()) document.activeElement.blur();
+  paintLater = false;
+  paint();
+  $('#main').scrollTop = 0;
+}
+
+function navBadge(key) {
+  if (key === 'folders') {
+    const conflicts = snap.pairs.reduce((n, p) => n + (p.status?.conflicts?.length || 0), 0);
+    if (conflicts) return el('span', { className: 'count warn', textContent: String(conflicts), title: t('Conflicts') });
+    return snap.pairs.length ? el('span', { className: 'count', textContent: String(snap.pairs.length) }) : null;
+  }
+  if (key === 'computer' && snap.machine) {
+    const [, tone] = MACHINE[snap.machine.state] || MACHINE.connecting;
+    return el('span', { className: `pip ${tone}` });
+  }
+  if (key === 'logins') {
+    const n = snap.machine?.logins?.accounts?.length || 0;
+    return n ? el('span', { className: 'count', textContent: String(n) }) : null;
+  }
+  if (key === 'settings' && snap.update) return el('span', { className: 'pip ok', title: t('argus-bridge {version} is ready', { version: snap.update }) });
+  return null;
+}
+
 function paint() {
   if (typing()) { paintLater = true; return; }
   $('#computer').textContent = snap.computer ? t('on {computer}', { computer: snap.computer }) : '';
-  $('#add').textContent = `+ ${t('Connect a folder')}`;
   // Argus itself in a window of this app — when there is a server to open: this computer's, or a folder's.
-  $('#argus').textContent = t('Open Argus');
-  $('#argus').title = t('Argus in a window of its own, with the notifications of this computer');
-  $('#argus').hidden = !snap.machine && !snap.pairs.length;
-  $('#pauseall').textContent = snap.paused_all ? t('Resume all') : t('Pause all');
-  $('#pauseall').hidden = !snap.pairs.length;
+  const argus = $('#argus');
+  argus.replaceChildren(icon('external'), t('Open Argus'));
+  argus.title = t('Argus in a window of its own, with the notifications of this computer');
+  argus.hidden = !snap.machine && !snap.pairs.length;
+  $('#version').textContent = snap.version ? `argus-bridge ${snap.version}` : '';
+  $('#nav').replaceChildren(...PAGES().map(([key, glyph, word]) => {
+    const b = el('button', { type: 'button', className: key === page ? 'on' : '', onclick: () => showPage(key) }, [icon(glyph), word, navBadge(key)]);
+    b.dataset.page = key;
+    if (key === page) b.setAttribute('aria-current', 'page');
+    return b;
+  }));
   const main = $('#main');
   const keep = main.scrollTop;
-  main.replaceChildren(...[updateBar(), machineCard(), ...(snap.pairs.length ? snap.pairs.map(card) : [emptyState()]), aboutRow()].filter(Boolean));
+  const body = { folders: foldersPage, computer: computerPage, logins: loginsPage, settings: settingsPage }[page] || foldersPage;
+  main.replaceChildren(el('div', { className: 'page' }, [updateBar(), ...body()].filter(Boolean)));
   main.scrollTop = keep;
+}
+
+function foldersPage() {
+  const add = el('button', { className: 'primary', type: 'button', id: 'add', onclick: () => connectSheet() }, [icon('plus'), t('Connect a folder')]);
+  const pause = el('button', { type: 'button', id: 'pauseall', hidden: !snap.pairs.length,
+    onclick: () => run('pause_all', { paused: !snap.paused_all }) }, [icon(snap.paused_all ? 'play' : 'pause'), snap.paused_all ? t('Resume all') : t('Pause all')]);
+  return [
+    pageHead(t('Folders'), t('Folders of an Argus server kept in sync with folders on this computer — both ways.'), [pause, add]),
+    ...(snap.pairs.length ? snap.pairs.map(card) : [emptyState()]),
+  ];
 }
 
 function emptyState() {
   const input = el('input', { type: 'text', placeholder: 'argus-bridge://pair?…', spellcheck: false });
-  const go = el('button', { className: 'primary', type: 'button', textContent: t('Continue'), onclick: () => takeLink(input.value) });
-  input.onkeydown = (e) => { if (e.key === 'Enter') go.click(); };
+  const next = el('button', { className: 'primary', type: 'button', textContent: t('Continue'), onclick: () => takeLink(input.value) });
+  input.onkeydown = (e) => { if (e.key === 'Enter') next.click(); };
+  const step = (n, words) => el('li', {}, [el('span', { className: 'num', textContent: String(n) }), el('span', { textContent: words })]);
   return el('section', { className: 'empty' }, [
-    el('h1', { textContent: t('No folder connected yet') }),
+    el('div', { className: 'mark' }, icon('sync')),
+    el('h2', { textContent: t('No folder connected yet') }),
     el('p', { textContent: t('A folder of an Argus server, kept in sync with a folder on this computer — both ways.') }),
-    el('ol', {}, [
-      el('li', { textContent: t('In Argus, open the ⋮ menu of a folder → Sync to your computer…') }),
-      el('li', { textContent: t('Click the link it gives: it opens here.') }),
-      el('li', { textContent: t('Choose where the folder goes on this computer.') }),
+    el('ol', { className: 'steps' }, [
+      step(1, t('In Argus, open the ⋮ menu of a folder → Sync to your computer…')),
+      step(2, t('Click the link it gives: it opens here.')),
+      step(3, t('Choose where the folder goes on this computer.')),
     ]),
     el('p', { textContent: t('Or paste the link:') }),
-    el('div', { className: 'pasterow' }, [input, go]),
+    el('div', { className: 'pasterow' }, [input, next]),
   ]);
 }
 
@@ -160,16 +260,17 @@ function card(p) {
     el('button', { className: 'ghost small iconbtn', type: 'button', title: t('More'), ariaLabel: t('More'), onclick: (e) => moreMenu(e, p) }, icon('more')),
   ]);
   const where = el('div', { className: 'where' }, [
+    icon('folder'),
     el('span', { className: 'path mono', title: p.local }, el('bdi', { textContent: p.local })),
-    el('button', { className: 'small', type: 'button', onclick: () => reveal(p.id) }, [icon('folder'), t('Open')]),
+    el('button', { className: 'small', type: 'button', onclick: () => reveal(p.id) }, [icon('external'), t('Open')]),
   ]);
   const line = s.message
     ? el('div', { className: 'line bad', textContent: explain(s.message) })
     : el('div', { className: 'line', textContent: s.last_ok ? t('Last synced {when}', { when: timeOf(s.last_ok) }) : '' });
   const acts = el('div', { className: 'acts' }, [
-    el('button', { className: 'small', type: 'button', textContent: p.paused ? t('Resume') : t('Pause'),
-      onclick: () => run('set_paused', { id: p.id, paused: !p.paused }) }),
-    el('button', { className: 'small', type: 'button', textContent: t('Sync now'), disabled: p.paused, onclick: () => run('sync_now') }),
+    el('button', { className: 'small', type: 'button', onclick: () => run('set_paused', { id: p.id, paused: !p.paused }) },
+      [icon(p.paused ? 'play' : 'pause'), p.paused ? t('Resume') : t('Pause')]),
+    el('button', { className: 'small', type: 'button', disabled: p.paused, onclick: () => run('sync_now') }, [icon('sync'), t('Sync now')]),
   ]);
   return el('article', { className: 'card' }, [head, where, line, acts, conflicts(p), waiting(p), notes(p), activity(p)]);
 }
@@ -228,7 +329,7 @@ function noteText(n) {
 function activity(p) {
   const list = p.status?.recent || [];
   const d = el('details', { className: 'sect', open: open.has(p.id) }, [
-    el('summary', { textContent: `${t('Recent activity')} (${list.length})` }),
+    el('summary', {}, [icon('chev'), `${t('Recent activity')} (${list.length})`]),
     ...(list.length ? list.slice(0, 30).map((a) => {
       const [glyph, word] = KINDS[a.kind] || ['later', a.kind];
       const detail = a.kind === 'down' || a.kind === 'up' ? bytes(Number(a.detail)) : a.kind === 'later' ? laterText(a.detail) : a.detail;
@@ -262,18 +363,17 @@ function updateBar() {
   ]);
 }
 
-/* The version, a check for a newer one, and whether newer ones install by themselves or are asked
- * first ("someone may not want it automatic", 2026-11-09). Asked first unless switched. */
-function aboutRow() {
-  const check = el('button', { className: 'small', type: 'button', textContent: t('Check for updates') });
+/* The version, a check for a newer one, whether newer ones install by themselves or are asked first
+ * ("someone may not want it automatic", 2026-11-09), and the language. */
+function settingsPage() {
+  const check = el('button', { type: 'button', id: 'checkupdates' }, [icon('sync'), t('Check for updates')]);
   check.onclick = async () => {
     check.disabled = true;
-    check.textContent = t('Checking…');
+    check.lastChild.textContent = t('Checking…');
     try { await invoke('check_updates'); } catch (e) { toast(explain(e)); }
     check.disabled = false;
-    check.textContent = t('Check for updates');
+    check.lastChild.textContent = t('Check for updates');
   };
-  const auto = el('input', { type: 'checkbox', checked: !!snap.auto_update, onchange: () => run('set_auto_update', { on: auto.checked }) });
   const language = el('select', { id: 'language', title: t('Language') });
   for (const [v, name] of [['', t('Language of the system')], ['en', 'English'], ['it', 'Italiano'], ['es', 'Español'], ['fr', 'Français']]) {
     language.append(el('option', { value: v, textContent: name, selected: v === langChosen }));
@@ -283,12 +383,15 @@ function aboutRow() {
     await run('set_language', { lang: language.value });
     location.reload();
   };
-  return el('footer', { className: 'aboutrow' }, [
-    el('span', { className: 'hint', textContent: `argus-bridge ${snap.version}` }),
-    check,
-    el('label', { className: 'autoupd', title: t('Off: a new version is offered first, and installed when you say so') }, [auto, t('Install updates by themselves')]),
-    el('label', { className: 'langpick' }, [icon('globe'), language]),
-  ]);
+  return [
+    pageHead(t('Settings'), t('This app’s own: how it updates, and the language it speaks.')),
+    group(t('Updates'), [
+      row({ glyph: 'update', title: `argus-bridge ${snap.version || ''}`, hint: snap.update ? t('argus-bridge {version} is ready', { version: snap.update }) : t('Only versions signed by the project are installed.'), control: check }),
+      row({ glyph: 'check', title: t('Install updates by themselves'), hint: t('Off: a new version is offered first, and installed when you say so'),
+        control: toggle(snap.auto_update, (on) => run('set_auto_update', { on }), { id: 'autoupdate' }) }),
+    ]),
+    group(t('Language'), [row({ glyph: 'globe', title: t('Language'), hint: t('Of this window and of the menu'), control: language })]),
+  ];
 }
 
 // ------------------------------------------------------------------------------- this computer
@@ -297,9 +400,9 @@ function aboutRow() {
  * turned on — its browser (a Chrome of its own, for the agents there), a terminal (a shell here, in
  * a window of Argus), actions (a command an agent asks, which you allow in Argus). */
 const SWITCHES = () => [
-  ['browser', icon('globe'), t('Browser'), t('A Chrome of its own (none of your sessions), for the agents on the server')],
-  ['terminal', icon('terminal'), t('Terminal'), t('A shell on this computer, in a window of Argus — for you')],
-  ['actions', icon('play'), t('Actions'), t('A command an agent asks to run here — each one allowed by you, in Argus')],
+  ['browser', 'globe', t('Browser'), t('A Chrome of its own (none of your sessions), for the agents on the server')],
+  ['terminal', 'terminal', t('Terminal'), t('A shell on this computer, in a window of Argus — for you')],
+  ['actions', 'play', t('Actions'), t('A command an agent asks to run here — each one allowed by you, in Argus')],
 ];
 const MACHINE = {
   connected: ['Connected', 'ok'], connecting: ['Connecting…', 'busy'], lost: ['Cannot reach the server', 'bad'],
@@ -309,41 +412,55 @@ const MACHINE = {
 function switches(offers, onChange) {
   return el('div', { className: 'switches' }, SWITCHES().map(([key, glyph, word, hint]) => {
     const box = el('input', { type: 'checkbox', checked: !!offers[key], onchange: () => onChange({ ...offers, [key]: box.checked }) });
-    const row = el('label', { className: 'switch' }, [box, el('span', { className: 'knob' }), glyph,
+    const row = el('label', { className: 'switch' }, [box, el('span', { className: 'knob' }), icon(glyph),
       el('span', { className: 'sw' }, [el('b', { textContent: word }), el('span', { className: 'hint', textContent: hint })])]);
     row.dataset.offer = key;
     return row;
   }));
 }
 
-function machineCard() {
+function computerPage() {
   const m = snap.machine;
-  if (!m) return null;
+  if (!m) {
+    return [
+      pageHead(t('This computer'), t('Lend Argus this computer’s browser for its agents, a terminal for you, and commands an agent asks to run here — each a switch, off until you turn it on.')),
+      el('section', { className: 'empty' }, [
+        el('div', { className: 'mark' }, icon('screen')),
+        el('h2', { textContent: t('Not connected to Argus') }),
+        el('p', { textContent: t('In Argus: Settings → Computers → Connect a computer… — open the link it gives here.') }),
+      ]),
+    ];
+  }
   const [label, tone] = MACHINE[m.state] || MACHINE.connecting;
   const set = (offers, on = m.on) => run('machine_set', { ...offers, on });
-  const toggle = el('button', { className: 'small', type: 'button', textContent: m.on ? t('Disconnect') : t('Connect'),
-    onclick: () => set(m.offers, !m.on) });
-  const forget = el('button', { className: 'small danger', type: 'button', textContent: t('Forget…'), onclick: () => sheet(
+  const toggleOn = el('button', { type: 'button', onclick: () => set(m.offers, !m.on) }, [icon(m.on ? 'pause' : 'play'), m.on ? t('Disconnect') : t('Connect')]);
+  const forget = el('button', { className: 'danger', type: 'button', onclick: () => sheet(
     t('Forget the connection to {host}?', { host: m.host }),
     [el('p', { textContent: t('This computer stops lending anything. To connect it again, make a new link in Argus.') })],
     [el('button', { type: 'button', textContent: t('Cancel'), onclick: shut }),
-      el('button', { className: 'danger', type: 'button', textContent: t('Forget'), onclick: async () => { await run('machine_forget'); shut(); } })]) });
-  const card = el('article', { className: 'card machine' }, [
-    el('div', { className: 'cardhead' }, [
-      el('span', { className: `dot ${m.state === 'connected' ? 'idle' : m.state === 'lost' ? 'offline' : m.state === 'connecting' ? 'syncing' : 'paused'}` }),
-      icon('screen'),
-      el('span', { className: 'name', textContent: t('This computer') }),
-      el('span', { className: 'server', textContent: t('on {host}', { host: m.host }) }),
-      el('span', { className: `chip ${tone}`, textContent: t(label) }),
-    ]),
-    m.message ? el('div', { className: 'line bad', textContent: explain(m.message) }) : null,
-    switches(m.offers, (offers) => set(offers)),
-    m.offers.browser ? browserSettings(m) : null,
-    m.offers.browser ? loginsSection(m) : null,
+      el('button', { className: 'danger solid', type: 'button', textContent: t('Forget'), onclick: async () => { await run('machine_forget'); shut(); } })]) },
+  [icon('trash'), t('Forget…')]);
+  const lends = SWITCHES().map(([key, glyph, word, hint]) => {
+    const r = row({ glyph, title: word, hint, on: !!m.offers[key],
+      control: toggle(m.offers[key], (on) => set({ ...m.offers, [key]: on })) });
+    r.classList.add('switch');
+    r.dataset.offer = key;
+    return r;
+  });
+  return [
+    pageHead(t('This computer'), t('Connected to Argus on {host}: what it lends, each one a switch.', { host: m.host }), [toggleOn],
+      el('span', { className: `pill ${tone}`, textContent: t(label) })),
+    m.message ? el('div', { className: 'callout' }, [icon('warn'), el('div', { className: 'body' }, [el('span', { textContent: explain(m.message) })])]) : null,
     fullDiskNote(m),
-    el('div', { className: 'acts' }, [toggle, forget]),
-  ]);
-  return card;
+    el('section', { className: 'group machine' }, [
+      el('div', { className: 'groupcap', textContent: t('What it lends') }),
+      el('div', { className: 'panel switches' }, lends),
+    ]),
+    m.offers.browser ? browserSettings(m) : null,
+    group(t('Connection'), [
+      row({ glyph: 'link', title: t('Argus on {host}', { host: m.host }), hint: t('The connection is kept: the app connects again when it starts, and when the network comes back.'), control: forget }),
+    ]),
+  ];
 }
 
 /* How the lent browser starts: the person's to decide ("can these be configured, so the user controls
@@ -360,65 +477,96 @@ function browserSettings(m) {
   const other = el('input', { type: 'text', id: 'browserpath', placeholder: '/Applications/…/Contents/MacOS/…', spellcheck: false });
   pick.value = !b.exe ? '' : found.includes(b.exe) ? b.exe : '…';
   other.value = pick.value === '…' ? b.exe : '';
-  other.hidden = pick.value !== '…';
-  pick.onchange = () => { other.hidden = pick.value !== '…'; if (!other.hidden) other.focus(); };
   const flags = el('input', { type: 'text', id: 'browserflags', value: b.flags || '', placeholder: '--lang=it --window-size=1400,900', spellcheck: false });
   const save = el('button', { className: 'small primary', type: 'button', textContent: t('Save') });
   save.onclick = async () => {
     await run('machine_browser', { hideAutomation: hide.checked, exe: pick.value === '…' ? other.value : pick.value, flags: flags.value });
     toast(t('Saved: the browser starts this way from its next start'));
   };
-  return foldable('browser', false, [
-    el('summary', { textContent: t('Browser settings') }),
-    el('label', { className: 'check' }, [hide, el('span', {}, [
-      el('b', { textContent: t('Don’t tell sites the browser is driven') }), ' ',
-      el('span', { className: 'hint', textContent: t('recommended: Google refuses to sign in a browser that says so') })])]),
-    el('label', {}, [t('Browser'), el('div', { className: 'row' }, [pick]), other]),
-    el('label', {}, [t('More switches for it'), flags]),
-    el('div', { className: 'acts' }, [save, el('span', { className: 'hint', textContent: t('Used from the browser’s next start.') })]),
-  ], 'sect browserset');
+  const hideRow = row({ glyph: 'shield', title: t('Don’t tell sites the browser is driven'),
+    hint: t('recommended: Google refuses to sign in a browser that says so'),
+    control: el('label', { className: 'toggle' }, [hide, el('span', { className: 'knob' })]) });
+  const exeRow = row({ glyph: 'globe', title: t('Browser'), hint: t('Chrome, Chromium, Edge or Brave — or a path'), control: pick });
+  const otherRow = el('div', { className: 'row stack', hidden: pick.value !== '…' }, [other]);
+  pick.onchange = () => { otherRow.hidden = pick.value !== '…'; if (!otherRow.hidden) other.focus(); };
+  const flagsRow = el('div', { className: 'row stack' }, [
+    el('div', { className: 'label' }, [el('b', { textContent: t('More switches for it') }), el('span', { className: 'hint', textContent: t('Used from the browser’s next start.') })]),
+    el('div', { className: 'control' }, [flags, save]),
+  ]);
+  const panel = el('section', { className: 'group browserset' }, [
+    el('div', { className: 'groupcap', textContent: t('Browser settings') }),
+    el('div', { className: 'panel' }, [hideRow, exeRow, otherRow, flagsRow]),
+  ]);
+  return panel;
 }
 
 /* Signing agents in with the person's saved logins (logins.rs): the vault in the system's keychain,
  * filled by hand or from a password manager's export, and 1Password read live. An agent never sees a
  * password: argus-bridge types it into the page, on its own site only, each time asked here first
  * unless the site is "Always". Off until switched on. */
-function loginsSection(m) {
+function loginsPage() {
+  const m = snap.machine;
+  const lede = t('Sign agents in with the logins you already keep. The agent never sees a password: argus-bridge types it into the page, on its own site only, after you allow it here.');
+  const head = pageHead(t('Logins'), lede);
+  if (!m || !m.offers.browser) {
+    return [head, el('section', { className: 'empty' }, [
+      el('div', { className: 'mark' }, icon('key')),
+      el('h2', { textContent: t('The browser is not lent') }),
+      el('p', { textContent: t('Logins are for the browser this computer lends to the agents: switch Browser on in This computer.') }),
+      el('button', { type: 'button', onclick: () => showPage('computer') }, [icon('screen'), t('This computer')]),
+    ])];
+  }
   const l = m.logins || { enabled: false, accounts: [], always: [] };
-  const on = el('input', { type: 'checkbox', checked: !!l.enabled });
-  const op = el('input', { type: 'checkbox', checked: !!l.onepassword, disabled: !l.onepassword_installed });
-  const save = () => run('logins_set', { enabled: on.checked, onepassword: op.checked });
-  on.onchange = save;
-  op.onchange = save;
-  const rows = (l.accounts || []).map((a) => el('div', { className: 'item login' }, [
-    el('span', { className: 'what' }, [el('b', { textContent: a.site }), ' ', el('span', { className: 'hint', textContent: a.username })]),
-    a.has_otp ? el('span', { className: 'chip', textContent: t('one-time codes') }) : null,
-    el('button', { className: 'small ghost', type: 'button', title: t('Remove this login'), textContent: '✕',
-      onclick: () => run('login_remove', { site: a.site, username: a.username }) }),
-  ]));
-  const always = (l.always || []).map((site) => el('span', { className: 'chip on' }, [site, ' ',
-    el('button', { className: 'ghost iconx', type: 'button', title: t('Ask again for this site'), textContent: '✕',
-      onclick: () => run('login_forget_always', { site }) })]));
-  const importBtn = el('button', { className: 'small', type: 'button', textContent: t('Import an export (CSV)…') });
+  const save = (enabled, onepassword) => run('logins_set', { enabled, onepassword });
+  const importBtn = el('button', { type: 'button' }, [icon('down'), t('Import an export (CSV)…')]);
   importBtn.onclick = async () => {
     try {
       const n = await invoke('logins_import');
       if (n !== null && n !== undefined) toast(t('{n} logins kept in the keychain', { n }));
     } catch (e) { toast(explain(e)); }
   };
-  return foldable('logins', !!l.enabled && !(l.accounts || []).length, [
-    el('summary', { textContent: t('Logins for agents') }),
-    el('label', { className: 'check' }, [on, el('span', {}, [el('b', { textContent: t('Sign agents in with my saved logins') }), ' ',
-      el('span', { className: 'hint', textContent: t('the agent never sees a password: it is typed into the page, on its own site only, after you allow it here') })])]),
-    el('label', { className: 'check' }, [op, el('span', {}, [el('b', { textContent: '1Password' }), ' ',
-      el('span', { className: 'hint', textContent: l.onepassword_installed ? t('its logins too, read when needed — unlocked by its app')
-        : t('install 1Password’s command line and turn on “Integrate with 1Password CLI” in its app') })])]),
-    el('div', { className: 'acts' }, [importBtn,
-      el('button', { className: 'small', type: 'button', textContent: t('Add a login…'), onclick: () => addLoginSheet() })]),
-    el('p', { className: 'hint', textContent: t('Chrome: Settings → Passwords → Export. Apple Passwords: File → Export All Passwords. Firefox, Bitwarden and 1Password export the same kind of file.') }),
-    rows.length ? el('div', { className: 'loginlist' }, rows) : el('p', { className: 'hint', textContent: t('No login kept here yet.') }),
-    always.length ? el('div', {}, [el('div', { className: 'hint', textContent: t('Signed in without asking:') }), el('div', { className: 'chips' }, always)]) : null,
-  ], 'sect logins');
+  const add = el('button', { className: 'primary', type: 'button', onclick: () => addLoginSheet() }, [icon('plus'), t('Add a login…')]);
+  const rows = (l.accounts || []).map((a) => {
+    const r = el('div', { className: 'row item login' }, [
+      el('span', { className: 'favicon', textContent: (a.site.replace(/^www\./, '')[0] || '?') }),
+      el('div', { className: 'label' }, [el('span', { className: 'site', textContent: a.site }), el('span', { className: 'acct', textContent: a.username })]),
+      el('div', { className: 'badges' }, [
+        a.has_otp ? el('span', { className: 'chip ok', textContent: t('one-time codes') }) : null,
+        el('span', { className: 'chip', textContent: a.source === '1password' ? '1Password' : t('keychain') }),
+      ]),
+      el('button', { className: 'ghost iconbtn', type: 'button', title: t('Remove this login'), ariaLabel: t('Remove this login'),
+        onclick: () => run('login_remove', { site: a.site, username: a.username }) }, icon('trash')),
+    ]);
+    return r;
+  });
+  const always = (l.always || []).map((site) => el('span', { className: 'chip on' }, [site,
+    el('button', { type: 'button', title: t('Ask again for this site'), ariaLabel: t('Ask again for this site'),
+      onclick: () => run('login_forget_always', { site }) }, icon('x'))]));
+  const kept = (l.accounts || []).filter((a) => a.source !== '1password').length;
+  return [
+    pageHead(t('Logins'), lede, [importBtn, add]),
+    el('section', { className: 'group logins' }, [
+      el('div', { className: 'panel' }, [
+        row({ glyph: 'key', title: t('Sign agents in with my saved logins'), hint: t('Off until you switch it on. Each sign-in is asked here first, unless the site is “Always”.'),
+          on: !!l.enabled, control: el('label', { className: 'toggle check' }, [el('input', { type: 'checkbox', checked: !!l.enabled, onchange: (e) => save(e.target.checked, !!l.onepassword) }), el('span', { className: 'knob' })]) }),
+      ]),
+    ]),
+    group(t('Where they come from'), [
+      row({ glyph: 'shield', title: t('The keychain of this computer'),
+        hint: kept === 1 ? t('1 login, added here or imported — encrypted by the system') : t('{n} logins, added here or imported — encrypted by the system', { n: kept }) }),
+      row({ glyph: 'key', title: '1Password', hint: l.onepassword_installed ? t('its logins too, read when needed — unlocked by its app')
+        : t('install 1Password’s command line and turn on “Integrate with 1Password CLI” in its app'),
+        control: toggle(l.onepassword, (on) => save(!!l.enabled, on), { disabled: !l.onepassword_installed }) }),
+    ], t('Chrome: Settings → Passwords → Export. Apple Passwords: File → Export All Passwords. Firefox, Bitwarden and 1Password export the same kind of file.')),
+    rows.length ? el('section', { className: 'group' }, [
+      el('div', { className: 'groupcap' }, [t('Kept here'), el('span', { className: 'n', textContent: String(rows.length) })]),
+      el('div', { className: 'panel loginlist' }, rows),
+    ]) : el('p', { className: 'groupnote', textContent: t('No login kept here yet.') }),
+    always.length ? el('section', { className: 'group' }, [
+      el('div', { className: 'groupcap', textContent: t('Signed in without asking:') }),
+      el('div', { className: 'panel' }, [el('div', { className: 'chips' }, always)]),
+    ]) : null,
+  ];
 }
 
 function addLoginSheet() {
@@ -447,14 +595,14 @@ function addLoginSheet() {
  * once, and it never asks again; gone by itself once given (the app looks at every refresh). */
 function fullDiskNote(m) {
   if (snap.full_disk !== false || !(m.offers.terminal || m.offers.actions)) return null;
-  return el('section', { className: 'sect fulldisk' }, [
-    el('h3', {}, [icon('warn'), t('Let agents work without asking')]),
-    el('p', { className: 'hint', textContent: t('macOS stops a command that reads Documents, Desktop or another app’s data to ask “Allow?” — and the agent waits until someone answers. Give argus-bridge Full Disk Access once and it never asks again.') }),
+  return el('section', { className: 'callout fulldisk' }, [icon('warn'), el('div', { className: 'body' }, [
+    el('b', { textContent: t('Let agents work without asking') }),
+    el('span', { className: 'hint', textContent: t('macOS stops a command that reads Documents, Desktop or another app’s data to ask “Allow?” — and the agent waits until someone answers. Give argus-bridge Full Disk Access once and it never asks again.') }),
     el('div', { className: 'acts' }, [
-      el('button', { className: 'primary small', type: 'button', textContent: t('Open the setting'), onclick: () => run('open_full_disk_settings') }),
+      el('button', { className: 'primary small', type: 'button', onclick: () => run('open_full_disk_settings') }, [icon('external'), t('Open the setting')]),
       el('span', { className: 'hint', textContent: t('Then switch argus-bridge on in the list (add it with + if it is not there).') }),
     ]),
-  ]);
+  ])]);
 }
 
 /** A link from Argus to connect this computer: what it will lend, chosen before anything goes. */
@@ -474,6 +622,7 @@ function machineSheet(link) {
     try {
       await invoke('machine_link', { link, ...offers });
       shut();
+      showPage('computer');
       toast(t('Connecting to {host}…', { host }));
     } catch (e) {
       toast(explain(e));
@@ -602,9 +751,8 @@ async function moveIt(p) {
 
 // --------------------------------------------------------------------------------------- start
 
-$('#add').onclick = () => connectSheet();
 $('#argus').onclick = () => run('open_argus');
-$('#pauseall').onclick = () => run('pause_all', { paused: !snap.paused_all });
+document.documentElement.lang = (navigator.language || 'en').slice(0, 2);
 listen('snapshot', (e) => { snap = e.payload; paint(); });
 listen('invite', (e) => takeLink(e.payload));
 snap = await invoke('get_snapshot');
