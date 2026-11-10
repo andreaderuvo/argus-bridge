@@ -99,6 +99,24 @@ struct MachineView {
     /// How the lent browser starts, and the browsers found here to choose from.
     browser: argus_sync_core::computer::BrowserSettings,
     browsers: Vec<String>,
+    /// The logins agents may be signed in with: names and sites only, never a secret.
+    logins: LoginsView,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct LoginsView {
+    enabled: bool,
+    onepassword: bool,
+    onepassword_installed: bool,
+    accounts: Vec<argus_sync_core::logins::Account>,
+    always: Vec<String>,
+}
+
+fn logins_view(dir: &Path) -> LoginsView {
+    let book = argus_sync_core::logins::Vault::new(dir).book();
+    LoginsView { enabled: book.enabled, onepassword: book.onepassword,
+                 onepassword_installed: argus_sync_core::logins::onepassword::installed(),
+                 accounts: book.accounts, always: book.always }
 }
 
 /// The connection's own state, kept between its thread and the window.
@@ -199,6 +217,7 @@ fn snapshot(shared: &Shared) -> Snapshot {
                 message: m.message.clone(),
                 browsers: argus_sync_core::computer::browsers_here().iter().map(|p| p.display().to_string()).collect(),
                 browser: setup.browser,
+                logins: logins_view(&shared.dir),
             }
         }),
     }
@@ -659,7 +678,29 @@ fn start_machine(app: &AppHandle, shared: &Arc<Shared>) {
             }
             let _ = bell_app.notification().builder().title(title).body(&told.text).show();
         };
-        let ended = computer::keep(&setup, browser.as_ref(), &stop, &said, &bell);
+        // An agent asking to be signed in: asked here, on this computer, in a dialog of the system — the
+        // site, the account and where it is kept; Allow once, Always for this site, or No.
+        let ask_app = app.clone();
+        let ask: argus_sync_core::logins::AskLogin = Arc::new(move |site: &str, account: &argus_sync_core::logins::Account| {
+            use argus_sync_core::logins::Decision;
+            use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogResult};
+            let from = if account.source == "1password" { "1Password" } else { "argus-bridge" };
+            let (once, always, no) = (words::tr("Allow once"), words::tr("Always for this site"), words::tr("No"));
+            let said = ask_app.dialog()
+                .message(words::tr("An agent asks to be signed in to {site} as {account}, with the login kept in {from}. It never sees the password.")
+                    .replace("{site}", site).replace("{account}", &account.username).replace("{from}", from))
+                .title(words::tr("Sign an agent in?"))
+                .buttons(MessageDialogButtons::YesNoCancelCustom(once.clone(), always.clone(), no.clone()))
+                .blocking_show_with_result();
+            match said {
+                MessageDialogResult::Custom(l) if l == once => Decision::Once,
+                MessageDialogResult::Custom(l) if l == always => Decision::Always,
+                MessageDialogResult::Yes => Decision::Once,
+                _ => Decision::No,
+            }
+        });
+        let logins = argus_sync_core::logins::Logins { dir: shared.dir.clone(), ask: Some(ask) };
+        let ended = computer::keep(&setup, browser.as_ref(), Some(&logins), &stop, &said, &bell);
         if let Some(b) = &browser {
             b.stop();
         }
@@ -718,6 +759,66 @@ fn machine_browser(app: AppHandle, shared: tauri::State<Arc<Shared>>, hide_autom
     setup.save(&shared.dir).map_err(|e| e.to_string())?;
     start_machine(&app, shared.inner());
     Ok(())
+}
+
+// ------------------------------------------------------------------------------------- logins
+
+/// Signing agents in at all, and with 1Password too.
+#[tauri::command]
+fn logins_set(app: AppHandle, shared: tauri::State<Arc<Shared>>, enabled: bool, onepassword: bool) -> Res<()> {
+    let vault = argus_sync_core::logins::Vault::new(&shared.dir);
+    let mut book = vault.book();
+    book.enabled = enabled;
+    book.onepassword = onepassword;
+    vault.save_book(&book).map_err(|e| e.to_string())?;
+    publish(&app, &shared);
+    Ok(())
+}
+
+/// A login kept by hand: its secret goes straight into the system's keychain.
+#[tauri::command]
+fn login_add(app: AppHandle, shared: tauri::State<Arc<Shared>>, site: String, username: String, password: String, otp: String) -> Res<()> {
+    argus_sync_core::logins::Vault::new(&shared.dir).add(&site, &username, &password, Some(otp.as_str()))
+        .map_err(|e| e)?;
+    publish(&app, &shared);
+    Ok(())
+}
+
+#[tauri::command]
+fn login_remove(app: AppHandle, shared: tauri::State<Arc<Shared>>, site: String, username: String) -> Res<()> {
+    argus_sync_core::logins::Vault::new(&shared.dir).remove(&site, &username).map_err(|e| e.to_string())?;
+    publish(&app, &shared);
+    Ok(())
+}
+
+/// A site no longer signed in without asking.
+#[tauri::command]
+fn login_forget_always(app: AppHandle, shared: tauri::State<Arc<Shared>>, site: String) -> Res<()> {
+    let vault = argus_sync_core::logins::Vault::new(&shared.dir);
+    let mut book = vault.book();
+    book.always.retain(|s| s != &site);
+    vault.save_book(&book).map_err(|e| e.to_string())?;
+    publish(&app, &shared);
+    Ok(())
+}
+
+/// A password manager's export (CSV) taken into the keychain — and the file, which holds every password
+/// in the clear, moved to the trash after: offered, not done behind the person's back.
+#[tauri::command]
+async fn logins_import(app: AppHandle, shared: tauri::State<'_, Arc<Shared>>) -> Res<Option<usize>> {
+    use tauri_plugin_dialog::DialogExt;
+    let Some(picked) = app.dialog().file().add_filter("CSV", &["csv"]).blocking_pick_file() else { return Ok(None) };
+    let path = picked.into_path().map_err(|e| e.to_string())?;
+    let kept = argus_sync_core::logins::Vault::new(&shared.dir).import_csv(&path).map_err(|e| e)?;
+    publish(&app, &shared);
+    use tauri_plugin_dialog::MessageDialogButtons;
+    let bin = app.dialog().message(words::tr("{n} logins are now in the keychain. The exported file still holds every password in the clear: move it to the trash?").replace("{n}", &kept.to_string()))
+        .title("argus-bridge").buttons(MessageDialogButtons::OkCancelCustom(words::tr("Move it to the trash"), words::tr("Keep it")))
+        .blocking_show();
+    if bin {
+        let _ = trash::delete(&path);
+    }
+    Ok(Some(kept))
 }
 
 /// Forget the connection here (Argus keeps the computer listed until it is forgotten there too).
@@ -997,7 +1098,7 @@ pub fn run() {
         .manage(shared.clone())
         .invoke_handler(tauri::generate_handler![
             get_snapshot, take_invite, inspect, connect, set_paused, pause_all, set_big, fetch, sync_now,
-            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget, update_now, open_argus, open_full_disk_settings, check_updates, set_auto_update, set_language, machine_browser
+            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget, update_now, open_argus, open_full_disk_settings, check_updates, set_auto_update, set_language, machine_browser, logins_set, login_add, login_remove, login_forget_always, logins_import
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

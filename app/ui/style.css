@@ -161,3 +161,14 @@ a.link:hover { text-decoration: underline; }
 .sect.browserset label.check { display: flex; gap: .5rem; align-items: flex-start; }
 .sect.browserset input[type=text], .sect.browserset select { font: inherit; font-size: .85rem; padding: .35rem .5rem; border: 1px solid var(--line); border-radius: .35rem; background: var(--bg, transparent); color: var(--bright); }
 .sect.browserset .acts { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+
+/* Logins for agents (app.js loginsSection). */
+.sect.logins summary { cursor: pointer; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
+.sect.logins[open] { display: grid; gap: .6rem; }
+.sect.logins label.check { display: flex; gap: .5rem; align-items: flex-start; font-size: .85rem; }
+.sect.logins .acts { display: flex; gap: .5rem; flex-wrap: wrap; }
+.sect.logins .loginlist { display: grid; gap: .3rem; }
+.sect.logins .item.login { display: flex; gap: .5rem; align-items: center; }
+.sect.logins .item.login .what { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.sect.logins .chips { display: flex; gap: .35rem; flex-wrap: wrap; margin-top: .25rem; }
+.sect.logins .iconx { padding: 0 .2rem; }

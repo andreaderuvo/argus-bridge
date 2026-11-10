@@ -4,6 +4,7 @@
 pub mod computer;
 pub mod engine;
 pub mod local;
+pub mod logins;
 pub mod names;
 pub mod pair;
 pub mod plan;

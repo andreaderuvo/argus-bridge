@@ -50,6 +50,25 @@ Disconnecting in Argus closes everything this computer lent.
 - A Chrome left on the browser profile by an earlier run is taken over, or ended and started again.
 - **Open Argus** opens Argus in a window of the app.
 
+## Signing agents in with your saved logins
+
+An agent on the server reaches a sign-in page in the lent browser and calls `browser_login`: argus-bridge
+types your saved login into the page — **the agent never sees the password**, which never leaves this
+computer. The way password managers do it for agents (1Password's Secure Agentic Autofill, Bitwarden):
+
+- **only on its own site** — the login of `efsa.europa.eu` is never typed on another host, checked again
+  right before typing;
+- **you allow it here**: *Allow once*, *Always for this site*, or *No* (the command-line client signs in
+  only where *Always* was chosen);
+- **every use in Argus's Journal** — site, account, where it came from; never the password.
+
+Where the logins come from (*This computer → Logins for agents*, off until switched on): argus-bridge's
+vault in the **system keychain** (macOS Keychain, Windows Credential Manager, Secret Service), added by
+hand or **imported from your password manager's CSV export** (Chrome, Apple Passwords, Firefox, Bitwarden,
+1Password — the file is offered to the trash after); **1Password** read live through its command line;
+**one-time codes** from a key kept with the login. Safari's and iCloud's passwords can only be read by
+Apple's apps: export them from Passwords.
+
 ## Cross-OS, by design
 
 | | handled |

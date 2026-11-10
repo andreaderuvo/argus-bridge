@@ -509,7 +509,7 @@ pub fn told(frame: &Value) -> Told {
 }
 
 /// Carry this computer to Argus until disconnected there, `stop` is set, or the connection goes.
-pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, say: &dyn Fn(&str), bell: Bell) -> Ended {
+pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, logins: Option<&crate::logins::Logins>, stop: &AtomicBool, say: &dyn Fn(&str), bell: Bell) -> Ended {
     let url = format!("{}/api/computers/bridge", setup.url.replacen("http", "ws", 1));
     let mut request = match tungstenite::client::IntoClientRequest::into_client_request(url.as_str()) {
         Ok(r) => r,
@@ -565,7 +565,9 @@ pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, 
                             "cdp" if !offers.browser => Some("the browser is off on this computer"),
                             "pty" if !offers.terminal => Some("the terminal is off on this computer"),
                             "run" if !offers.actions => Some("actions are off on this computer"),
-                            "cdp" | "pty" | "run" => None,
+                            "login" if !offers.browser => Some("the browser is off on this computer"),
+                            "login" if logins.is_none() => Some("signing agents in is not offered by this client"),
+                            "cdp" | "pty" | "run" | "login" => None,
                             _ => Some("not something this computer does"),
                         };
                         if let Some(why) = refuse {
@@ -577,6 +579,7 @@ pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, 
                         let out = to_server.clone();
                         let frame = frame.clone();
                         let lent = browser.cloned();
+                        let logins = logins.cloned();
                         let again = setup.clone();
                         thread::spawn(move || match frame.get("kind").and_then(Value::as_str) {
                             Some("cdp") => {
@@ -597,6 +600,25 @@ pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, 
                                 }
                             }
                             Some("pty") => terminal(ch, &frame, rx, out),
+                            // Signed in with a saved login (logins.rs): answered once, then closed.
+                            Some("login") => {
+                                let port = lent.as_ref().and_then(|b| b.running()).map(|(p, _)| p);
+                                let said = match (port, logins.as_ref()) {
+                                    (Some(port), Some(l)) => crate::logins::serve(l, port, &frame),
+                                    (None, _) => Err("the browser is not open: open the sign-in page first".into()),
+                                    (_, None) => Err("signing agents in is not offered by this client".into()),
+                                };
+                                let _ = out.send(json!({"op": "opened", "ch": ch}));
+                                match said {
+                                    Ok(v) => {
+                                        let _ = out.send(json!({"op": "msg", "ch": ch, "data": v.to_string()}));
+                                        let _ = out.send(json!({"op": "close", "ch": ch, "code": 0}));
+                                    }
+                                    Err(why) => {
+                                        let _ = out.send(json!({"op": "close", "ch": ch, "why": why}));
+                                    }
+                                }
+                            }
                             _ => run(ch, &frame, rx, out),
                         });
                     }
@@ -705,10 +727,10 @@ pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, 
 }
 
 /// Connect until disconnected in Argus or stopped here: made again when the connection drops.
-pub fn keep(setup: &Setup, browser: Option<&Arc<Browser>>, stop: &AtomicBool, say: &dyn Fn(&str), bell: Bell) -> Ended {
+pub fn keep(setup: &Setup, browser: Option<&Arc<Browser>>, logins: Option<&crate::logins::Logins>, stop: &AtomicBool, say: &dyn Fn(&str), bell: Bell) -> Ended {
     let mut wait = Duration::from_secs(1);
     loop {
-        match bridge(setup, browser, stop, say, bell) {
+        match bridge(setup, browser, logins, stop, say, bell) {
             Ended::Lost(why) => {
                 say(&format!("connection to {} lost ({why}); trying again in {}s", setup.url, wait.as_secs()));
                 let until = Instant::now() + wait;

@@ -228,7 +228,9 @@ fn computer(dir: &PathBuf, args: &[String]) -> Res {
         None
     };
     let stop = std::sync::atomic::AtomicBool::new(false);
-    let ended = computer::keep(&setup, browser.as_ref(), &stop, &|said| println!("{said}"),
+    // No one to ask here: a sign-in is done only on the sites marked "Always" in the app.
+    let logins = argus_sync_core::logins::Logins { dir: dir.to_path_buf(), ask: None };
+    let ended = computer::keep(&setup, browser.as_ref(), Some(&logins), &stop, &|said| println!("{said}"),
                                &|b, _| println!("[{}] {}: {}", b.why, b.session, b.text));
     if let Some(b) = &browser {
         b.stop();

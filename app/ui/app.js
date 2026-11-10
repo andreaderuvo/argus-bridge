@@ -319,6 +319,7 @@ function machineCard() {
     m.message ? el('div', { className: 'line bad', textContent: explain(m.message) }) : null,
     switches(m.offers, (offers) => set(offers)),
     m.offers.browser ? browserSettings(m) : null,
+    m.offers.browser ? loginsSection(m) : null,
     fullDiskNote(m),
     el('div', { className: 'acts' }, [toggle, forget]),
   ]);
@@ -356,6 +357,69 @@ function browserSettings(m) {
     el('label', {}, [t('More switches for it'), flags]),
     el('div', { className: 'acts' }, [save, el('span', { className: 'hint', textContent: t('Used from the browser’s next start.') })]),
   ]);
+}
+
+/* Signing agents in with the person's saved logins (logins.rs): the vault in the system's keychain,
+ * filled by hand or from a password manager's export, and 1Password read live. An agent never sees a
+ * password: argus-bridge types it into the page, on its own site only, each time asked here first
+ * unless the site is "Always". Off until switched on. */
+function loginsSection(m) {
+  const l = m.logins || { enabled: false, accounts: [], always: [] };
+  const on = el('input', { type: 'checkbox', checked: !!l.enabled });
+  const op = el('input', { type: 'checkbox', checked: !!l.onepassword, disabled: !l.onepassword_installed });
+  const save = () => run('logins_set', { enabled: on.checked, onepassword: op.checked });
+  on.onchange = save;
+  op.onchange = save;
+  const rows = (l.accounts || []).map((a) => el('div', { className: 'item login' }, [
+    el('span', { className: 'what' }, [el('b', { textContent: a.site }), ' ', el('span', { className: 'hint', textContent: a.username })]),
+    a.has_otp ? el('span', { className: 'chip', textContent: t('one-time codes') }) : null,
+    el('button', { className: 'small ghost', type: 'button', title: t('Remove this login'), textContent: '✕',
+      onclick: () => run('login_remove', { site: a.site, username: a.username }) }),
+  ]));
+  const always = (l.always || []).map((site) => el('span', { className: 'chip on' }, [site, ' ',
+    el('button', { className: 'ghost iconx', type: 'button', title: t('Ask again for this site'), textContent: '✕',
+      onclick: () => run('login_forget_always', { site }) })]));
+  const importBtn = el('button', { className: 'small', type: 'button', textContent: t('Import an export (CSV)…') });
+  importBtn.onclick = async () => {
+    try {
+      const n = await invoke('logins_import');
+      if (n !== null && n !== undefined) toast(t('{n} logins kept in the keychain', { n }));
+    } catch (e) { toast(explain(e)); }
+  };
+  return el('details', { className: 'sect logins', open: !!l.enabled && !(l.accounts || []).length }, [
+    el('summary', { textContent: t('Logins for agents') }),
+    el('label', { className: 'check' }, [on, el('span', {}, [el('b', { textContent: t('Sign agents in with my saved logins') }), ' ',
+      el('span', { className: 'hint', textContent: t('the agent never sees a password: it is typed into the page, on its own site only, after you allow it here') })])]),
+    el('label', { className: 'check' }, [op, el('span', {}, [el('b', { textContent: '1Password' }), ' ',
+      el('span', { className: 'hint', textContent: l.onepassword_installed ? t('its logins too, read when needed — unlocked by its app')
+        : t('install 1Password’s command line and turn on “Integrate with 1Password CLI” in its app') })])]),
+    el('div', { className: 'acts' }, [importBtn,
+      el('button', { className: 'small', type: 'button', textContent: t('Add a login…'), onclick: () => addLoginSheet() })]),
+    el('p', { className: 'hint', textContent: t('Chrome: Settings → Passwords → Export. Apple Passwords: File → Export All Passwords. Firefox, Bitwarden and 1Password export the same kind of file.') }),
+    rows.length ? el('div', { className: 'loginlist' }, rows) : el('p', { className: 'hint', textContent: t('No login kept here yet.') }),
+    always.length ? el('div', {}, [el('div', { className: 'hint', textContent: t('Signed in without asking:') }), el('div', { className: 'chips' }, always)]) : null,
+  ]);
+}
+
+function addLoginSheet() {
+  const site = el('input', { type: 'text', id: 'loginsite', placeholder: 'wgsportal-test.efsa.europa.eu', spellcheck: false });
+  const user = el('input', { type: 'text', id: 'loginuser', autocomplete: 'off', spellcheck: false });
+  const pass = el('input', { type: 'password', id: 'loginpass', autocomplete: 'new-password' });
+  const otp = el('input', { type: 'text', id: 'loginotp', placeholder: t('optional — the key or the otpauth:// link'), spellcheck: false });
+  const err = el('p', { className: 'err', hidden: true });
+  const go = el('button', { className: 'primary', type: 'button', textContent: t('Keep it') });
+  go.onclick = async () => {
+    try {
+      await invoke('login_add', { site: site.value, username: user.value, password: pass.value, otp: otp.value });
+      pass.value = '';
+      shut();
+      toast(t('Kept in the keychain'));
+    } catch (e) { err.textContent = explain(e); err.hidden = false; }
+  };
+  sheet(t('A login for agents'), [
+    el('label', {}, [t('Site'), site]), el('label', {}, [t('Account'), user]), el('label', {}, [t('Password'), pass]),
+    el('label', {}, [t('One-time codes'), otp]), err,
+  ], [el('button', { type: 'button', textContent: t('Cancel'), onclick: shut }), go]);
 }
 
 /* On a Mac with Terminal or Actions lent and no Full Disk Access: macOS would stop an agent's command at

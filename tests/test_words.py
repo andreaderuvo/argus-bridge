@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 UI = ROOT / "app" / "ui"
 # The same in every language, on purpose.
 SAME = {"argus-bridge://pair?…", "Pause", "Notes", "Conflict", "Browser", "Terminal", "Actions", "Web"}
-SAME_IN = {"fr": {"Pause", "Notes"}, "es": set(), "it": set()}
+SAME_IN = {"fr": {"Pause", "Notes", "Site"}, "es": set(), "it": {"Account", "Password"}}
 
 
 def catalogues() -> dict:

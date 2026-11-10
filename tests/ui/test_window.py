@@ -204,3 +204,22 @@ def test_how_the_lent_browser_starts_is_the_persons_to_set(make_page):
         document.getElementById('browserflags').value = '--lang=it'; document.querySelector('.browserset input[type=checkbox]').click(); })()""")
     page.click(".browserset .acts button")
     page.wait("window.__mock.calls.some(c => c[0] === 'machine_browser' && c[1].hideAutomation === false && c[1].flags === '--lang=it' && c[1].exe.includes('Brave'))", what="saved")
+
+
+def test_logins_for_agents_are_kept_and_switched_from_the_window(make_page):
+    """"Read the passwords from there" (2026-11-10): the switch (off by default), a login added by hand
+    straight to the keychain, removed — names and sites only on screen, never a password."""
+    page = make_page("?machine")
+    page.wait("!!document.querySelector('.sect.logins')", what="the logins")
+    page.eval("document.querySelector('.sect.logins').open = true")
+    assert page.eval("document.querySelector('.sect.logins input[type=checkbox]').checked") is False
+    page.click(".sect.logins label.check input")
+    page.wait("window.__mock.calls.some(c => c[0] === 'logins_set' && c[1].enabled === true)", what="switched on")
+    page.click_text("Add a login…")
+    page.eval("""(() => { const v = (id, x) => { const e = document.getElementById(id); e.value = x; };
+        v('loginsite', 'portal.example.org'); v('loginuser', 'me@lab'); v('loginpass', 'p4ss'); })()""")
+    page.click_text("Keep it")
+    page.wait("[...document.querySelectorAll('.item.login')].some(r => r.textContent.includes('portal.example.org'))", what="kept")
+    assert "p4ss" not in page.eval("document.body.innerText")
+    page.eval("[...document.querySelectorAll('.item.login')].find(r => r.textContent.includes('portal.example.org')).querySelector('button').click()")
+    page.wait("window.__mock.calls.some(c => c[0] === 'login_remove' && c[1].site === 'portal.example.org')", what="removed")
