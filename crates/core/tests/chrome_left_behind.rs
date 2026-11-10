@@ -79,3 +79,25 @@ fn a_page_does_not_see_an_automated_browser() {
     };
     assert_eq!(answer["result"]["result"]["value"], serde_json::json!(false), "{answer}");
 }
+
+
+/// A Chrome left on the profile by a version that started it differently — without the switch that
+/// hides automation — is not taken over: it is ended, and one started as asked now (2026-11-10).
+#[test]
+fn a_chrome_started_with_other_switches_is_replaced_not_taken_over() {
+    let Some(exe) = chromium() else {
+        eprintln!("SKIPPED: no Chromium (set ARGUS_SYNC_CHROME)");
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let profile = tmp.path().join("browser-profile");
+    let bare = vec!["--headless=new".to_string(), "--no-sandbox".to_string()];
+    let old = start_chrome(&exe, &profile, &bare).expect("an old Chrome");
+    let old_port = old.port;
+    std::mem::forget(old);
+    let mut asked = argus_sync_core::computer::BrowserSettings::default().args();
+    asked.extend(bare);
+    let now = start_chrome(&exe, &profile, &asked).expect("one started as asked");
+    assert!(now.child.is_some(), "started anew, not taken over");
+    assert!(now.port != old_port || !answers(old_port));
+}

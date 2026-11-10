@@ -261,6 +261,25 @@ fn holder(profile: &Path) -> Option<u32> {
     process_alive(pid).then_some(pid)
 }
 
+/// How a process was started, as one line: None where it cannot be read.
+fn command_line(pid: u32) -> Option<String> {
+    #[cfg(target_os = "linux")]
+    {
+        let raw = fs::read(format!("/proc/{pid}/cmdline")).ok()?;
+        Some(String::from_utf8_lossy(&raw).replace('\0', " "))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let out = Command::new("ps").args(["-ww", "-o", "command=", "-p", &pid.to_string()]).output().ok()?;
+        out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let _ = pid;
+        None
+    }
+}
+
 fn process_alive(pid: u32) -> bool {
     #[cfg(unix)]
     {
@@ -303,7 +322,20 @@ pub fn start_chrome(exe: &Path, profile: &Path, extra: &[String]) -> io::Result<
     fs::create_dir_all(profile)?;
     if let Some((port, ws_path)) = read_active(profile) {
         if port_answers(port) && !version(port).is_empty() {
-            return Ok(Chrome { child: None, pid: holder(profile), profile: profile.to_path_buf(), port, ws_path });
+            // Taken over only when it runs with the switches asked for now: 0.1.12 took over the Chrome
+            // 0.1.11 had started, without the switch that hides automation, and Google went on refusing
+            // to sign it in (2026-11-10). Otherwise it is ended, and one started as asked.
+            let pid = holder(profile);
+            let started_as_asked = pid.and_then(command_line).map(|line| extra.iter().all(|a| line.contains(a.as_str())));
+            if started_as_asked != Some(false) {
+                return Ok(Chrome { child: None, pid, profile: profile.to_path_buf(), port, ws_path });
+            }
+            if let Some(pid) = pid {
+                end_process(pid);
+                for lock in ["SingletonLock", "SingletonCookie", "SingletonSocket"] {
+                    let _ = fs::remove_file(profile.join(lock));
+                }
+            }
         }
     }
     for attempt in 0..2 {
