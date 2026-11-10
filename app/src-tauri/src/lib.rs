@@ -840,7 +840,11 @@ const UPDATE_EVERY: Duration = Duration::from_secs(3600);
 /// version you said Later to, and says so when there is nothing newer.
 async fn look_for_update(app: &AppHandle, shared: &Arc<Shared>, asked: bool) -> Res<Option<String>> {
     use tauri_plugin_updater::UpdaterExt;
-    let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?;
+    // In words, not the updater's: "could not fetch a valid release JSON" was all a press of Check for
+    // updates said while a release was being published (2026-11-10).
+    let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| {
+        say("Could not check for updates: GitHub did not answer as expected ({why}). Try again in a few minutes.", &[("why", e.to_string())])
+    })?;
     let found = update.as_ref().map(|u| u.version.clone());
     let changed = *shared.update.lock().unwrap() != found;
     *shared.update.lock().unwrap() = found.clone();
