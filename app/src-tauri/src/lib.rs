@@ -917,7 +917,17 @@ fn open_argus_window(app: &AppHandle, shared: &Shared) -> Res<()> {
         .or_else(|| Pairs::load(&shared.dir).pairs.first().map(|p| p.url.clone()))
         .ok_or_else(|| say("Connect this computer or a folder first: then Argus opens here", &[]))?;
     let parsed = url.parse::<tauri::Url>().map_err(|e| e.to_string())?;
+    let opener = app.clone();
     tauri::WebviewWindowBuilder::new(app, "argus", tauri::WebviewUrl::External(parsed))
+        // A link Argus opens in a new tab (a URL in a session, a port, Search) goes to the computer's own
+        // browser. Unhandled, the webview dropped every window.open and the click did nothing
+        // (andreaderuvo/argus#17, 2026-11-10).
+        .on_new_window(move |url, _| {
+            if opens_outside(&url) {
+                let _ = opener.opener().open_url(url.as_str(), None::<&str>);
+            }
+            tauri::webview::NewWindowResponse::Deny
+        })
         .title("Argus")
         .inner_size(1360.0, 880.0)
         .min_inner_size(420.0, 420.0)
@@ -929,6 +939,12 @@ fn open_argus_window(app: &AppHandle, shared: &Shared) -> Res<()> {
         .build()
         .map_err(|e| e.to_string())
         .map(|w| to_front(app, &w))
+}
+
+/// What a link may hand to the computer's browser: web pages and mail, never `file:`, `javascript:` or an
+/// app's own scheme that a page could use to start something on the computer.
+fn opens_outside(url: &tauri::Url) -> bool {
+    matches!(url.scheme(), "http" | "https" | "mailto")
 }
 
 // ------------------------------------------------------------------------------- updating itself
@@ -1185,6 +1201,13 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_web_pages_and_mail_leave_for_the_browser() {
+        let ok = |u: &str| super::opens_outside(&u.parse().unwrap());
+        assert!(ok("http://tracker.example/issues/7045") && ok("https://example.org/") && ok("mailto:a@example.org"));
+        assert!(!ok("file:///etc/passwd") && !ok("javascript:alert(1)") && !ok("argus-bridge://pair?x=1"));
+    }
+
     use super::*;
 
     /// What the window is drawn from never waits on itself: 0.1.10 locked the update settings twice in
