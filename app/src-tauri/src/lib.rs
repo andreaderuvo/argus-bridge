@@ -922,6 +922,8 @@ fn open_argus_window(app: &AppHandle, shared: &Shared) -> Res<()> {
         .inner_size(1360.0, 880.0)
         .min_inner_size(420.0, 420.0)
         .focused(true)
+        // A click on a window that is not in front is a click, not only "bring it forward" (macOS).
+        .accept_first_mouse(true)
         // Argus's own ground while it loads, not a white rectangle that reads as nothing opening.
         .background_color(tauri::window::Color(11, 14, 20, 255))
         .build()
