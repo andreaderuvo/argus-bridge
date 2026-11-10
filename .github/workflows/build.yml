@@ -1,5 +1,7 @@
 # Every change: the engine's tests on macOS, Windows and Linux (the cross-OS rules are only proven
-# where they apply), and the app built for all three. A tag v* also publishes the installers.
+# where they apply), the window's tests, and the app's own tests. A tag v* also builds the app for all
+# three and publishes the installers: building them at every push filled GitHub's five macOS machines
+# with pushes, and a release waited behind them (2026-11-10).
 name: build
 
 on:
@@ -12,6 +14,11 @@ on:
 permissions:
   contents: write
 
+# A newer push makes an older run of the same branch pointless; a release is never cancelled.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   engine:
     strategy:
@@ -22,6 +29,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      # The ~500 crates compiled once, then kept: most of a build's time was compiling them again.
+      - uses: Swatinem/rust-cache@v2
       - name: Unit tests (names, plan, links)
         run: cargo test -p argus-sync-core --lib
       # One Python, the one `python3` names: on newer runners `pip` and `python3` were two different ones.
@@ -46,8 +55,24 @@ jobs:
             target/release/argus-bridge
             target/release/argus-bridge.exe
 
+  # The app's own tests, at every push (Linux: the window's toolkit is there to install).
+  app-check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri -> target
+      - name: Linux toolkits
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      # The window's state drawn without waiting on itself: 0.1.10 hung at start.
+      - name: The app's tests
+        run: cargo test --manifest-path app/src-tauri/Cargo.toml --lib
+
   app:
-    needs: engine
+    needs: [engine, app-check]
+    if: startsWith(github.ref, 'refs/tags/')
     strategy:
       fail-fast: false
       matrix:
@@ -64,13 +89,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri -> target
+          key: ${{ matrix.args }}
       - name: Linux toolkits
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
-      # The app's own tests (the window's state, drawn without waiting on itself): 0.1.10 hung at start.
-      - name: The app's tests
-        if: runner.os == 'Linux'
-        run: cargo test --manifest-path app/src-tauri/Cargo.toml --lib
       # One code-signing certificate, always the same (ours, self-signed: ~/.keys/argus-bridge-codesign.*).
       # Ad-hoc signing gave every build a new identity, so macOS forgot every "Allow" at each update and
       # asked again — with an agent waiting on the Mac until somebody pressed it (2026-11-09). Signed with
