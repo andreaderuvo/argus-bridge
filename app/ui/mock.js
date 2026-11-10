@@ -8,7 +8,8 @@ let state = {
   computer: 'lap684',
   version: '0.1.1',
   update: q.has('update') ? '0.1.2' : null,
-  machine: q.has('machine') ? { host: 'lab-server', name: 'lap684', offers: { browser: true, terminal: true, actions: false }, on: true, state: 'connected', message: '' } : null,
+  machine: q.has('machine') ? { host: 'lab-server', name: 'lap684', offers: { browser: true, terminal: true, actions: false }, on: true, state: 'connected', message: '',
+    browser: { hide_automation: true, exe: '', flags: '' }, browsers: ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser'] } : null,
   full_disk: q.has('nofulldisk') ? false : null,
   auto_update: false,
   language: '',
@@ -70,6 +71,7 @@ window.__TAURI__ = {
           break;
         case 'set_auto_update': state.auto_update = args.on; break;
         case 'check_updates': break;
+        case 'machine_browser': state.machine = { ...state.machine, browser: { hide_automation: args.hideAutomation, exe: args.exe, flags: args.flags } }; break;
         case 'set_language': state.language = args.lang; break;
         case 'machine_set': state.machine = { ...state.machine, offers: { browser: args.browser, terminal: args.terminal, actions: args.actions }, on: args.on, state: args.on ? 'connected' : 'off' }; break;
         case 'machine_forget': state.machine = null; break;

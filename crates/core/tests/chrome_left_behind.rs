@@ -52,3 +52,30 @@ fn a_chrome_left_on_the_profile_is_taken_over_or_replaced() {
     assert!(!answers(port) || third.port == port, "the one left behind is gone");
     drop(third);
 }
+
+
+/// What a page sees: not a browser "controlled by automated software" (Argus issue #16 — Google refused
+/// to sign in the lent browser, which said navigator.webdriver = true).
+#[test]
+fn a_page_does_not_see_an_automated_browser() {
+    let Some(exe) = chromium() else {
+        eprintln!("SKIPPED: no Chromium (set ARGUS_SYNC_CHROME)");
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    // As the app starts it: the person's settings, the default ones here.
+    let mut extra = argus_sync_core::computer::BrowserSettings::default().args();
+    extra.extend(["--headless=new".to_string(), "--no-sandbox".to_string()]);
+    let chrome = start_chrome(&exe, &tmp.path().join("profile"), &extra).expect("a Chrome");
+    let list: serde_json::Value = ureq::get(&format!("http://127.0.0.1:{}/json/list", chrome.port)).call().unwrap().into_json().unwrap();
+    let page = list.as_array().unwrap().iter().find(|t| t["type"] == "page").expect("a page")["webSocketDebuggerUrl"].as_str().unwrap().to_string();
+    let (mut ws, _) = tungstenite::connect(page.as_str()).expect("the page");
+    ws.send(tungstenite::Message::Text(r#"{"id":1,"method":"Runtime.evaluate","params":{"expression":"navigator.webdriver","returnByValue":true}}"#.into())).unwrap();
+    let answer: serde_json::Value = loop {
+        if let Ok(tungstenite::Message::Text(t)) = ws.read() {
+            let v: serde_json::Value = serde_json::from_str(t.as_str()).unwrap();
+            if v["id"] == 1 { break v; }
+        }
+    };
+    assert_eq!(answer["result"]["result"]["value"], serde_json::json!(false), "{answer}");
+}

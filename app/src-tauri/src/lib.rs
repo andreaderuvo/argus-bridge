@@ -96,6 +96,9 @@ struct MachineView {
     /// off | connecting | connected | lost | given-back
     state: String,
     message: String,
+    /// How the lent browser starts, and the browsers found here to choose from.
+    browser: argus_sync_core::computer::BrowserSettings,
+    browsers: Vec<String>,
 }
 
 /// The connection's own state, kept between its thread and the window.
@@ -194,6 +197,8 @@ fn snapshot(shared: &Shared) -> Snapshot {
                 host: host_of(&setup.url), name: setup.name, offers: setup.offers, on: setup.on,
                 state: if m.state.is_empty() { if setup.on { "connecting".into() } else { "off".into() } } else { m.state.clone() },
                 message: m.message.clone(),
+                browsers: argus_sync_core::computer::browsers_here().iter().map(|p| p.display().to_string()).collect(),
+                browser: setup.browser,
             }
         }),
     }
@@ -618,13 +623,13 @@ fn start_machine(app: &AppHandle, shared: &Arc<Shared>) {
             publish(&app, &shared);
         };
         let browser = if setup.offers.browser {
-            match computer::find_chrome() {
+            match setup.browser.exe() {
                 None => {
                     set("connecting", say("No Chrome here: the browser is not lent (install Chrome, or switch Browser off)", &[]));
                     None
                 }
                 // Started by the bridge, and again whenever an agent needs it after the window was closed.
-                Some(exe) => Some(Arc::new(computer::Browser::new(exe, shared.dir.join("browser-profile"), Vec::new()))),
+                Some(exe) => Some(Arc::new(computer::Browser::new(exe, shared.dir.join("browser-profile"), setup.browser.args()))),
             }
         } else {
             None
@@ -680,6 +685,8 @@ fn machine_link(app: AppHandle, shared: tauri::State<Arc<Shared>>, link: String,
     let setup = Setup {
         url: invite.url, key: invite.key, name: if invite.name.is_empty() { host_name() } else { invite.name },
         offers: Offers { browser, terminal, actions }, on: true,
+        // Linked again: how its browser starts stays as the person set it.
+        browser: Setup::load(&shared.dir).map(|s| s.browser).unwrap_or_default(),
     };
     setup.save(&shared.dir).map_err(|e| e.to_string())?;
     start_machine(&app, shared.inner());
@@ -693,6 +700,21 @@ fn machine_set(app: AppHandle, shared: tauri::State<Arc<Shared>>, browser: bool,
     let mut setup = Setup::load(&shared.dir).ok_or_else(|| say("This computer is not connected to Argus", &[]))?;
     setup.offers = Offers { browser, terminal, actions };
     setup.on = on;
+    setup.save(&shared.dir).map_err(|e| e.to_string())?;
+    start_machine(&app, shared.inner());
+    Ok(())
+}
+
+/// How the lent browser starts — chosen by the person, used from its next start (the connection is made
+/// again, and with it the browser, which an agent's next call starts with these).
+#[tauri::command]
+fn machine_browser(app: AppHandle, shared: tauri::State<Arc<Shared>>, hide_automation: bool, exe: String, flags: String) -> Res<()> {
+    use argus_sync_core::computer::{BrowserSettings, Setup};
+    let mut setup = Setup::load(&shared.dir).ok_or_else(|| say("This computer is not connected to Argus", &[]))?;
+    if !exe.trim().is_empty() && !std::path::Path::new(exe.trim()).is_file() {
+        return Err(say("There is no browser at {path}", &[("path", exe.trim().to_string())]));
+    }
+    setup.browser = BrowserSettings { hide_automation, exe: exe.trim().to_string(), flags: flags.trim().to_string() };
     setup.save(&shared.dir).map_err(|e| e.to_string())?;
     start_machine(&app, shared.inner());
     Ok(())
@@ -971,7 +993,7 @@ pub fn run() {
         .manage(shared.clone())
         .invoke_handler(tauri::generate_handler![
             get_snapshot, take_invite, inspect, connect, set_paused, pause_all, set_big, fetch, sync_now,
-            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget, update_now, open_argus, open_full_disk_settings, check_updates, set_auto_update, set_language
+            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget, update_now, open_argus, open_full_disk_settings, check_updates, set_auto_update, set_language, machine_browser
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

@@ -79,6 +79,55 @@ pub struct Setup {
     /// Connect when the app starts.
     #[serde(default)]
     pub on: bool,
+    /// How the lent browser is started: the person's to decide (the app's This computer → Browser).
+    #[serde(default)]
+    pub browser: BrowserSettings,
+}
+
+/// How the lent browser starts. Kept with the computer's connection; used the next time it starts.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BrowserSettings {
+    /// Not said to every page that a debugging port drives it (navigator.webdriver). On by default: said,
+    /// Google refuses to sign in "a browser that may not be secure" (Argus issue #16).
+    #[serde(default = "yes")]
+    pub hide_automation: bool,
+    /// Which browser: a path to Chrome, Chromium, Edge or Brave; empty = the first found.
+    #[serde(default)]
+    pub exe: String,
+    /// More switches for it, separated by spaces — for whoever knows what they do.
+    #[serde(default)]
+    pub flags: String,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl Default for BrowserSettings {
+    fn default() -> Self {
+        BrowserSettings { hide_automation: true, exe: String::new(), flags: String::new() }
+    }
+}
+
+impl BrowserSettings {
+    /// The switches it adds to the ones the bridge always gives (port, profile, no first-run).
+    pub fn args(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if self.hide_automation {
+            out.push("--disable-blink-features=AutomationControlled".to_string());
+        }
+        out.extend(self.flags.split_whitespace().map(str::to_string));
+        out
+    }
+
+    /// The browser chosen, when it is there; else the first found here.
+    pub fn exe(&self) -> Option<PathBuf> {
+        let chosen = PathBuf::from(self.exe.trim());
+        if !self.exe.trim().is_empty() && chosen.is_file() {
+            return Some(chosen);
+        }
+        find_chrome()
+    }
 }
 
 impl Setup {
@@ -108,12 +157,27 @@ impl Setup {
 
 // ------------------------------------------------------------------------------------- the browser
 
+/// Every browser found here that can be lent (Chrome, Chromium, Edge, Brave), for the person to choose.
+pub fn browsers_here() -> Vec<PathBuf> {
+    chrome_places().into_iter().filter(|p| p.is_file()).fold(Vec::new(), |mut out, p| {
+        if !out.contains(&p) {
+            out.push(p);
+        }
+        out
+    })
+}
+
 /// Where Chrome is on this computer: `ARGUS_SYNC_CHROME` first, then the usual places.
 pub fn find_chrome() -> Option<PathBuf> {
     if let Ok(said) = std::env::var("ARGUS_SYNC_CHROME") {
         let p = PathBuf::from(said);
         return p.is_file().then_some(p);
     }
+    chrome_places().into_iter().find(|p| p.is_file())
+}
+
+/// The usual places of a browser that can be lent, best first.
+fn chrome_places() -> Vec<PathBuf> {
     let mut places: Vec<PathBuf> = Vec::new();
     if cfg!(target_os = "macos") {
         for app in ["Google Chrome", "Chromium", "Microsoft Edge", "Brave Browser"] {
@@ -129,10 +193,11 @@ pub fn find_chrome() -> Option<PathBuf> {
                 let base = PathBuf::from(base);
                 places.push(base.join("Google/Chrome/Application/chrome.exe"));
                 places.push(base.join("Microsoft/Edge/Application/msedge.exe"));
+                places.push(base.join("BraveSoftware/Brave-Browser/Application/brave.exe"));
             }
         }
     } else {
-        for name in ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge"] {
+        for name in ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge", "brave-browser"] {
             if let Some(path) = std::env::var_os("PATH") {
                 for dir in std::env::split_paths(&path) {
                     places.push(dir.join(name));
@@ -140,7 +205,7 @@ pub fn find_chrome() -> Option<PathBuf> {
             }
         }
     }
-    places.into_iter().find(|p| p.is_file())
+    places
 }
 
 /// A Chrome started for lending, and how to reach it here.
@@ -928,7 +993,7 @@ mod tests {
     fn the_switches_start_off_and_are_kept() {
         let dir = tempfile::tempdir().unwrap();
         assert!(Setup::load(dir.path()).is_none());
-        let mut setup = Setup { url: "https://a".into(), key: "ac_k".into(), name: "Mac".into(), offers: Offers::default(), on: false };
+        let mut setup = Setup { url: "https://a".into(), key: "ac_k".into(), name: "Mac".into(), offers: Offers::default(), on: false, browser: Default::default() };
         assert_eq!(setup.offers, Offers { browser: false, terminal: false, actions: false });
         setup.offers.terminal = true;
         setup.save(dir.path()).unwrap();

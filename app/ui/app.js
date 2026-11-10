@@ -318,10 +318,44 @@ function machineCard() {
     ]),
     m.message ? el('div', { className: 'line bad', textContent: explain(m.message) }) : null,
     switches(m.offers, (offers) => set(offers)),
+    m.offers.browser ? browserSettings(m) : null,
     fullDiskNote(m),
     el('div', { className: 'acts' }, [toggle, forget]),
   ]);
   return card;
+}
+
+/* How the lent browser starts: the person's to decide ("can these be configured, so the user controls
+ * the harness?", 2026-11-10). Hidden automation on by default — Google refuses to sign in a browser
+ * that tells pages it is driven. Saved here, used from the browser's next start. */
+function browserSettings(m) {
+  const b = m.browser || { hide_automation: true, exe: '', flags: '' };
+  const hide = el('input', { type: 'checkbox', checked: b.hide_automation !== false });
+  const found = m.browsers || [];
+  const pick = el('select', { id: 'browserexe' });
+  pick.append(el('option', { value: '', textContent: t('The first one found') }));
+  for (const path of found) pick.append(el('option', { value: path, textContent: path.split('/').filter((x) => x.endsWith('.app'))[0]?.replace(/\.app$/, '') || path }));
+  pick.append(el('option', { value: '…', textContent: t('Another…') }));
+  const other = el('input', { type: 'text', id: 'browserpath', placeholder: '/Applications/…/Contents/MacOS/…', spellcheck: false });
+  pick.value = !b.exe ? '' : found.includes(b.exe) ? b.exe : '…';
+  other.value = pick.value === '…' ? b.exe : '';
+  other.hidden = pick.value !== '…';
+  pick.onchange = () => { other.hidden = pick.value !== '…'; if (!other.hidden) other.focus(); };
+  const flags = el('input', { type: 'text', id: 'browserflags', value: b.flags || '', placeholder: '--lang=it --window-size=1400,900', spellcheck: false });
+  const save = el('button', { className: 'small primary', type: 'button', textContent: t('Save') });
+  save.onclick = async () => {
+    await run('machine_browser', { hideAutomation: hide.checked, exe: pick.value === '…' ? other.value : pick.value, flags: flags.value });
+    toast(t('Saved: the browser starts this way from its next start'));
+  };
+  return el('details', { className: 'sect browserset' }, [
+    el('summary', { textContent: t('Browser settings') }),
+    el('label', { className: 'check' }, [hide, el('span', {}, [
+      el('b', { textContent: t('Don’t tell sites the browser is driven') }), ' ',
+      el('span', { className: 'hint', textContent: t('recommended: Google refuses to sign in a browser that says so') })])]),
+    el('label', {}, [t('Browser'), el('div', { className: 'row' }, [pick]), other]),
+    el('label', {}, [t('More switches for it'), flags]),
+    el('div', { className: 'acts' }, [save, el('span', { className: 'hint', textContent: t('Used from the browser’s next start.') })]),
+  ]);
 }
 
 /* On a Mac with Terminal or Actions lent and no Full Disk Access: macOS would stop an agent's command at

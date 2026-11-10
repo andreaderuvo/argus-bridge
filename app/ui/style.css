@@ -153,3 +153,11 @@ a.link:hover { text-decoration: underline; }
 .aboutrow .langpick { display: inline-flex; gap: .35rem; align-items: center; margin-left: auto; color: var(--dim); }
 .aboutrow .langpick .ico { width: 15px; height: 15px; }
 .aboutrow select { font: inherit; font-size: .82rem; color: var(--bright); background: var(--panel, transparent); border: 1px solid var(--line); border-radius: .35rem; padding: .15rem .3rem; }
+
+/* The lent browser's settings (app.js browserSettings): folded, under the switches. */
+.sect.browserset summary { cursor: pointer; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
+.sect.browserset[open] { display: grid; gap: .6rem; }
+.sect.browserset label { display: grid; gap: .3rem; font-size: .85rem; }
+.sect.browserset label.check { display: flex; gap: .5rem; align-items: flex-start; }
+.sect.browserset input[type=text], .sect.browserset select { font: inherit; font-size: .85rem; padding: .35rem .5rem; border: 1px solid var(--line); border-radius: .35rem; background: var(--bg, transparent); color: var(--bright); }
+.sect.browserset .acts { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }

@@ -207,7 +207,7 @@ fn computer(dir: &PathBuf, args: &[String]) -> Res {
         Some(text) => {
             let invite = computer::parse_link(text).ok_or("that is not a link from Argus to connect a computer (argus-bridge://computer?url=…&key=ac_…)")?;
             Setup { url: invite.url, key: invite.key, name: if invite.name.is_empty() { argus_sync_core::engine::host_name() } else { invite.name },
-                    offers: Offers::default(), on: true }
+                    offers: Offers::default(), on: true, browser: Default::default() }
         }
         None => Setup::load(dir).ok_or("not connected yet — in Argus: Settings → Computers → Connect this computer")?,
     };
@@ -217,8 +217,8 @@ fn computer(dir: &PathBuf, args: &[String]) -> Res {
     }
     setup.save(dir).map_err(|e| e.to_string())?;
     let browser = if setup.offers.browser {
-        let exe = chrome_at.or_else(computer::find_chrome).ok_or("no Chrome found here (say where: --chrome <path>, or leave out --browser)")?;
-        let mut extra: Vec<String> = Vec::new();
+        let exe = chrome_at.or_else(|| setup.browser.exe()).ok_or("no Chrome found here (say where: --chrome <path>, or leave out --browser)")?;
+        let mut extra: Vec<String> = setup.browser.args();
         if flag("--headless") {
             extra.extend(["--headless=new".into(), "--no-sandbox".into(), "--disable-gpu".into()]);
         }

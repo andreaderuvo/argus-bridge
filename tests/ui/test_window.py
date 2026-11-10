@@ -191,3 +191,16 @@ def test_the_language_is_chosen_at_the_foot_of_the_window(make_page):
     page.eval("(() => { const s = document.getElementById('language'); s.value = 'it'; s.dispatchEvent(new Event('change')); })()")
     page.wait("document.querySelector('#add')?.textContent.includes('Collega')", what="in Italian after the reload")
     assert page.eval("document.getElementById('language').value") == "it"
+
+
+def test_how_the_lent_browser_starts_is_the_persons_to_set(make_page):
+    """"Can these be configured, so the user controls the harness?" (2026-11-10): hidden automation (on
+    by default), which browser, more switches — saved for the browser's next start."""
+    page = make_page("?machine")
+    page.wait("!!document.querySelector('.browserset')", what="the browser's settings")
+    page.eval("document.querySelector('.browserset').open = true")
+    assert page.eval("document.querySelector('.browserset input[type=checkbox]').checked") is True
+    page.eval("""(() => { const s = document.getElementById('browserexe'); s.value = s.options[2].value; s.dispatchEvent(new Event('change'));
+        document.getElementById('browserflags').value = '--lang=it'; document.querySelector('.browserset input[type=checkbox]').click(); })()""")
+    page.click(".browserset .acts button")
+    page.wait("window.__mock.calls.some(c => c[0] === 'machine_browser' && c[1].hideAutomation === false && c[1].flags === '--lang=it' && c[1].exe.includes('Brave'))", what="saved")
