@@ -223,3 +223,17 @@ def test_logins_for_agents_are_kept_and_switched_from_the_window(make_page):
     assert "p4ss" not in page.eval("document.body.innerText")
     page.eval("[...document.querySelectorAll('.item.login')].find(r => r.textContent.includes('portal.example.org')).querySelector('button').click()")
     page.wait("window.__mock.calls.some(c => c[0] === 'login_remove' && c[1].site === 'portal.example.org')", what="removed")
+
+
+def test_a_section_opened_stays_open_and_typing_is_not_wiped_by_a_repaint(make_page):
+    """"When I open the sections they close again" (2026-11-10): the state arrives every few seconds and
+    redrew everything. An opened section stays open; a field being typed in keeps what was typed."""
+    page = make_page("?machine")
+    page.wait("!!document.querySelector('.browserset')", what="the browser's settings")
+    page.click(".browserset summary")
+    page.eval("document.getElementById('browserflags').focus(); document.getElementById('browserflags').value = '--lang=it'")
+    page.eval("window.__mock.emit('snapshot', window.__mock.state)")
+    assert page.eval("document.getElementById('browserflags').value") == "--lang=it", "typing kept"
+    page.eval("document.getElementById('browserflags').blur()")
+    page.eval("window.__mock.emit('snapshot', window.__mock.state)")
+    assert page.eval("document.querySelector('.browserset').open") is True, "still open after a repaint"

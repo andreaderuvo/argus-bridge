@@ -95,7 +95,27 @@ const timeOf = (at) => (at || '').slice(11, 16);
 
 // ------------------------------------------------------------------------------------- paint
 
+/* A folded section opened (or closed) by hand stays so across repaints — the state arrives every few
+ * seconds and redrew every section closed ("when I open the sections they close again", 2026-11-10). */
+const folded = new Map();
+function foldable(id, opened, children, cls) {
+  const d = el('details', { className: cls, open: folded.has(id) ? folded.get(id) : opened }, children);
+  d.dataset.fold = id;
+  d.ontoggle = () => folded.set(id, d.open);
+  return d;
+}
+
+/* Typing in a field of the window: the repaint waits until the field is left, or what was typed and
+ * the cursor went with it. */
+let paintLater = false;
+function typing() {
+  const a = document.activeElement;
+  return !!a && a.closest('#main') && (a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || (a.tagName === 'INPUT' && !['checkbox', 'radio', 'button'].includes(a.type)));
+}
+document.addEventListener('focusout', () => setTimeout(() => { if (paintLater && !typing()) { paintLater = false; paint(); } }, 0));
+
 function paint() {
+  if (typing()) { paintLater = true; return; }
   $('#computer').textContent = snap.computer ? t('on {computer}', { computer: snap.computer }) : '';
   $('#add').textContent = `+ ${t('Connect a folder')}`;
   // Argus itself in a window of this app — when there is a server to open: this computer's, or a folder's.
@@ -348,7 +368,7 @@ function browserSettings(m) {
     await run('machine_browser', { hideAutomation: hide.checked, exe: pick.value === '…' ? other.value : pick.value, flags: flags.value });
     toast(t('Saved: the browser starts this way from its next start'));
   };
-  return el('details', { className: 'sect browserset' }, [
+  return foldable('browser', false, [
     el('summary', { textContent: t('Browser settings') }),
     el('label', { className: 'check' }, [hide, el('span', {}, [
       el('b', { textContent: t('Don’t tell sites the browser is driven') }), ' ',
@@ -356,7 +376,7 @@ function browserSettings(m) {
     el('label', {}, [t('Browser'), el('div', { className: 'row' }, [pick]), other]),
     el('label', {}, [t('More switches for it'), flags]),
     el('div', { className: 'acts' }, [save, el('span', { className: 'hint', textContent: t('Used from the browser’s next start.') })]),
-  ]);
+  ], 'sect browserset');
 }
 
 /* Signing agents in with the person's saved logins (logins.rs): the vault in the system's keychain,
@@ -386,7 +406,7 @@ function loginsSection(m) {
       if (n !== null && n !== undefined) toast(t('{n} logins kept in the keychain', { n }));
     } catch (e) { toast(explain(e)); }
   };
-  return el('details', { className: 'sect logins', open: !!l.enabled && !(l.accounts || []).length }, [
+  return foldable('logins', !!l.enabled && !(l.accounts || []).length, [
     el('summary', { textContent: t('Logins for agents') }),
     el('label', { className: 'check' }, [on, el('span', {}, [el('b', { textContent: t('Sign agents in with my saved logins') }), ' ',
       el('span', { className: 'hint', textContent: t('the agent never sees a password: it is typed into the page, on its own site only, after you allow it here') })])]),
@@ -398,7 +418,7 @@ function loginsSection(m) {
     el('p', { className: 'hint', textContent: t('Chrome: Settings → Passwords → Export. Apple Passwords: File → Export All Passwords. Firefox, Bitwarden and 1Password export the same kind of file.') }),
     rows.length ? el('div', { className: 'loginlist' }, rows) : el('p', { className: 'hint', textContent: t('No login kept here yet.') }),
     always.length ? el('div', {}, [el('div', { className: 'hint', textContent: t('Signed in without asking:') }), el('div', { className: 'chips' }, always)]) : null,
-  ]);
+  ], 'sect logins');
 }
 
 function addLoginSheet() {
