@@ -170,6 +170,9 @@ fn host_of(url: &str) -> String {
 }
 
 fn snapshot(shared: &Shared) -> Snapshot {
+    // Read once, before the struct below: two `shared.updates.lock()` in one expression hold the first
+    // guard while asking for the second, and 0.1.10 hung on itself at its first drawing (2026-11-10).
+    let prefs = shared.updates.lock().unwrap().clone();
     let pairs = Pairs::load(&shared.dir).pairs;
     let status = shared.status.lock().unwrap();
     Snapshot {
@@ -183,8 +186,8 @@ fn snapshot(shared: &Shared) -> Snapshot {
         version: env!("CARGO_PKG_VERSION").to_string(),
         update: shared.update.lock().unwrap().clone(),
         full_disk: full_disk_access(),
-        auto_update: shared.updates.lock().unwrap().auto,
-        language: shared.updates.lock().unwrap().language.clone(),
+        auto_update: prefs.auto,
+        language: prefs.language,
         machine: argus_sync_core::computer::Setup::load(&shared.dir).map(|setup| {
             let m = shared.machine.lock().unwrap();
             MachineView {
@@ -986,7 +989,8 @@ pub fn run() {
                 take_links(&h2, &on_link, event.urls().into_iter().map(|u| u.to_string()).collect());
             });
 
-            words::choose(&shared.updates.lock().unwrap().language.clone());
+            let language = shared.updates.lock().unwrap().language.clone();
+            words::choose(&language);
             let menu = tray_menu(app)?;
             let tray_shared = shared.clone();
             let mut tray = TrayIconBuilder::with_id("main")
@@ -1048,4 +1052,36 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("argus-bridge could not start");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// What the window is drawn from never waits on itself: 0.1.10 locked the update settings twice in
+    /// one expression and hung at its first drawing. Run on a thread with a deadline, so a deadlock
+    /// fails the test instead of hanging it.
+    #[test]
+    fn the_snapshot_never_hangs() {
+        let dir = std::env::temp_dir().join(format!("argus-bridge-snapshot-{}", std::process::id()));
+        let shared = Arc::new(Shared {
+            dir: dir.clone(),
+            status: Mutex::new(BTreeMap::new()),
+            invite: Mutex::new(None),
+            paused_all: Mutex::new(false),
+            wake: Mutex::new(None),
+            machine: Mutex::new(Machine::default()),
+            update: Mutex::new(Some("9.9.9".into())),
+            updates: Mutex::new(UpdatePrefs { auto: true, later: None, language: "it".into() }),
+        });
+        let (tx, rx) = mpsc::channel();
+        let sh = shared.clone();
+        std::thread::spawn(move || {
+            let snap = snapshot(&sh);
+            let _ = tx.send((snap.auto_update, snap.language, snap.update));
+        });
+        let got = rx.recv_timeout(Duration::from_secs(5)).expect("snapshot() hung: a lock taken twice?");
+        assert_eq!(got, (true, "it".to_string(), Some("9.9.9".to_string())));
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

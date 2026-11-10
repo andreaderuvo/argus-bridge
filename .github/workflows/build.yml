@@ -67,6 +67,10 @@ jobs:
       - name: Linux toolkits
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      # The app's own tests (the window's state, drawn without waiting on itself): 0.1.10 hung at start.
+      - name: The app's tests
+        if: runner.os == 'Linux'
+        run: cargo test --manifest-path app/src-tauri/Cargo.toml --lib
       # One code-signing certificate, always the same (ours, self-signed: ~/.keys/argus-bridge-codesign.*).
       # Ad-hoc signing gave every build a new identity, so macOS forgot every "Allow" at each update and
       # asked again — with an agent waiting on the Mac until somebody pressed it (2026-11-09). Signed with
