@@ -9,7 +9,7 @@ let state = {
   version: '0.1.1',
   update: q.has('update') ? '0.1.2' : null,
   machine: q.has('machine') ? { host: 'lab-server', name: 'lap684', offers: { browser: true, terminal: true, actions: false }, on: true, state: 'connected', message: '',
-    logins: { enabled: q.has('logins'), onepassword: false, onepassword_installed: false, accounts: q.has('logins') ? [{ site: 'wgsportal-test.efsa.europa.eu', username: 'andrea@lab.example', source: 'vault', has_otp: true }] : [], always: [] },
+    logins: { enabled: q.has('logins'), onepassword: false, onepassword_installed: false, accounts: q.has('logins') ? [{ site: 'login.example.com', username: 'sam@example.com', source: 'vault', has_otp: true }] : [], always: [] },
     browser: { hide_automation: true, exe: '', flags: '' }, browsers: ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser'] } : null,
   full_disk: q.has('nofulldisk') ? false : null,
   auto_update: false,
@@ -74,7 +74,8 @@ window.__TAURI__ = {
         case 'check_updates': break;
         case 'machine_browser': state.machine = { ...state.machine, browser: { hide_automation: args.hideAutomation, exe: args.exe, flags: args.flags } }; break;
         case 'logins_set': state.machine = { ...state.machine, logins: { ...state.machine.logins, enabled: args.enabled, onepassword: args.onepassword } }; break;
-        case 'login_add': state.machine.logins.accounts = [...state.machine.logins.accounts, { site: args.site, username: args.username, source: 'vault', has_otp: !!args.otp }]; break;
+        case 'login_add': state.machine.logins.accounts = [...state.machine.logins.accounts, { site: args.site, username: args.username, source: 'vault', has_otp: !!args.otp, code: args.code || '' }]; break;
+        case 'login_code': state.machine.logins.accounts = state.machine.logins.accounts.map((a) => (a.site === args.site && a.username === args.username ? { ...a, code: args.code } : a)); break;
         case 'login_remove': state.machine.logins.accounts = state.machine.logins.accounts.filter((a) => !(a.site === args.site && a.username === args.username)); break;
         case 'set_language': state.language = args.lang; break;
         case 'machine_set': state.machine = { ...state.machine, offers: { browser: args.browser, terminal: args.terminal, actions: args.actions }, on: args.on, state: args.on ? 'connected' : 'off' }; break;

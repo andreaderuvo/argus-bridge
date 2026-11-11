@@ -56,11 +56,13 @@ An agent on the server reaches a sign-in page in the lent browser and calls `bro
 types your saved login into the page — **the agent never sees the password**, which never leaves this
 computer. The way password managers do it for agents (1Password's Secure Agentic Autofill, Bitwarden):
 
-- **only on its own site** — the login of `efsa.europa.eu` is never typed on another host, checked again
+- **only on its own site** — the login of `example.com` is never typed on another host, checked again
   right before typing;
 - **you allow it here**: *Allow once*, *Always for this site*, or *No* (the command-line client signs in
   only where *Always* was chosen);
 - **every use in Argus's Journal** — site, account, where it came from; never the password.
+- **a code of yours** for a login: tell an agent *"sign in with WORK"* and it uses that one — without
+  seeing the account, and without asking which when a site has several.
 
 Where the logins come from (*This computer → Logins for agents*, off until switched on): argus-bridge's
 vault in the **system keychain** (macOS Keychain, Windows Credential Manager, Secret Service), added by

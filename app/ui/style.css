@@ -115,6 +115,10 @@ main { overflow: auto; min-height: 0; padding: 22px 26px 40px; }
 .pill.bad { background: var(--bad-soft); color: var(--bad); }
 .pill.warn { background: var(--warn-soft); color: var(--warn); }
 .chip { font-size: .74rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); white-space: nowrap; display: inline-flex; align-items: center; gap: .3rem; }
+.chip.code { cursor: pointer; background: none; font: inherit; font-size: .74rem; font-family: var(--mono, ui-monospace, monospace); }
+.chip.code svg { width: .9em; height: .9em; }
+.chip.code.on { color: var(--text); border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.chip.code:not(.on) { font-family: inherit; border-style: dashed; }
 .chip.ok { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .chip.busy { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, var(--line)); }
 .chip.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }

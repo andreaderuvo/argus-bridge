@@ -22,7 +22,7 @@ fn chromium() -> Option<PathBuf> {
 }
 
 const CHROME_EXPORT: &str = "name,url,username,password,note\n\
-EFSA,https://wgsportal-test.efsa.europa.eu/login,andrea@izs.example,s3cret-efsa,\n\
+Site,https://login.example.com/login,sam@example.com,s3cret-site,\n\
 Local,http://127.0.0.1/,tester,pa55-local,\n\
 App,android://hash@com.app,someone,nope,\n";
 
@@ -41,10 +41,10 @@ fn exports_of_chrome_and_apple_passwords_are_imported_and_found_by_site() {
     let book = std::fs::read_to_string(tmp.path().join("logins.json")).unwrap();
     assert!(!book.contains("s3cret") && !book.contains("lab-pass") && !book.contains("JBSWY"), "no secret in the list");
 
-    let found = logins::accounts_for(&vault, "wgsportal-test.efsa.europa.eu");
+    let found = logins::accounts_for(&vault, "login.example.com");
     assert_eq!(found.len(), 1);
-    assert_eq!((found[0].site.as_str(), found[0].username.as_str()), ("wgsportal-test.efsa.europa.eu", "andrea@izs.example"));
-    assert!(logins::login_for(&vault, "efsa.europa.eu.evil.com", None).is_err());
+    assert_eq!((found[0].site.as_str(), found[0].username.as_str()), ("login.example.com", "sam@example.com"));
+    assert!(logins::login_for(&vault, "example.com.evil.com", None).is_err());
     let lab = logins::login_for(&vault, "lab.example.org", None).unwrap();
     assert!(lab.account.has_otp && lab.otp.is_some());
     assert!(logins::login_for(&vault, "nowhere.example", None).unwrap_err().contains("no saved login"));

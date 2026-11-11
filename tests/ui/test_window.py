@@ -233,8 +233,33 @@ def test_logins_for_agents_are_kept_and_switched_from_the_window(make_page):
     page.click_text("Keep it")
     page.wait("[...document.querySelectorAll('.item.login')].some(r => r.textContent.includes('portal.example.org'))", what="kept")
     assert "p4ss" not in page.eval("document.body.innerText")
-    page.eval("[...document.querySelectorAll('.item.login')].find(r => r.textContent.includes('portal.example.org')).querySelector('button').click()")
+    page.eval("[...document.querySelectorAll('.item.login')].find(r => r.textContent.includes('portal.example.org')).querySelector('button.iconbtn').click()")
     page.wait("window.__mock.calls.some(c => c[0] === 'login_remove' && c[1].site === 'portal.example.org')", what="removed")
+
+
+def test_a_login_gets_a_code_to_tell_an_agent_which_one(make_page):
+    """"Besides the site, a code — so I can tell the agent: use the code XYZ when you sign in; a site may
+    have three accounts" (2026-11-11). Given when the login is added, or later from the list; changed, cleared."""
+    page = make_page("?machine&logins", dark=True)
+    to(page, "logins")
+    page.wait("!!document.querySelector('.item.login')", what="the logins")
+    page.click_text("Add a login…")
+    page.eval("""(() => { const v = (id, x) => { const e = document.getElementById(id); e.value = x; };
+        v('loginsite', 'portal.example.org'); v('loginuser', 'me@lab'); v('loginpass', 'p4ss'); v('logincode', 'LAB-2'); })()""")
+    page.click_text("Keep it")
+    page.wait("window.__mock.calls.some(c => c[0] === 'login_add' && c[1].code === 'LAB-2')", what="kept with its code")
+    page.wait("[...document.querySelectorAll('.chip.code.on')].some(c => c.textContent === 'LAB-2')", what="the code on its row")
+    # One without a code offers one; pressed, it is given.
+    page.click("#main .item.login .chip.code:not(.on)")
+    page.wait("!!document.getElementById('logincode')", what="the code's sheet")
+    page.eval("document.getElementById('logincode').value = 'WORK'")
+    page.click_text("Save")
+    page.wait("window.__mock.calls.some(c => c[0] === 'login_code' && c[1].code === 'WORK')", what="given")
+    page.wait("[...document.querySelectorAll('.chip.code.on')].some(c => c.textContent === 'WORK')", what="shown")
+    # Cleared from the same sheet.
+    page.eval("[...document.querySelectorAll('.chip.code.on')].find(c => c.textContent === 'WORK').click()")
+    page.click_text("Clear")
+    page.wait("window.__mock.calls.some(c => c[0] === 'login_code' && c[1].code === '')", what="cleared")
 
 
 def test_a_section_opened_stays_open_and_typing_is_not_wiped_by_a_repaint(make_page):

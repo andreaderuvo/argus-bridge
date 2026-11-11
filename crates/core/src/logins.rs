@@ -55,6 +55,10 @@ pub struct Account {
     pub source: String,
     #[serde(default)]
     pub has_otp: bool,
+    /// A name the person gives this login, to tell an agent which one to use ("sign in with XYZ") without
+    /// saying the account — and to choose among several accounts on one site. Not secret; unique.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub code: String,
 }
 
 /// A login, with its secrets: only built to be filled, and dropped after.
@@ -85,7 +89,7 @@ pub fn site_of(said: &str) -> String {
 }
 
 /// Whether a login kept for `site` may be used on `host`: the same host, or one of its subdomains —
-/// the login of `efsa.europa.eu` on `wgsportal-test.efsa.europa.eu`, never on `efsa.europa.eu.evil.com`.
+/// the login of `example.com` on `login.example.com`, never on `example.com.evil.com`.
 pub fn host_matches(site: &str, host: &str) -> bool {
     let (site, host) = (site_of(site), site_of(host));
     !site.is_empty() && (host == site || host.ends_with(&format!(".{site}")))
@@ -197,9 +201,20 @@ impl Vault {
 
     /// Kept, or replaced when the same site and account are there already.
     pub fn add(&self, site: &str, username: &str, password: &str, otp_key: Option<&str>) -> Result<Account, String> {
+        self.add_coded(site, username, password, otp_key, "")
+    }
+
+    /// The same, with the code the person gives it ("" for none).
+    pub fn add_coded(&self, site: &str, username: &str, password: &str, otp_key: Option<&str>, code: &str) -> Result<Account, String> {
         let site = site_of(site);
         if site.is_empty() || username.trim().is_empty() || password.is_empty() {
             return Err("a login needs a site, an account and a password".into());
+        }
+        let mut code = self.free_code(code, &site, username.trim())?;
+        if code.is_empty() {
+            // Kept again (an import, a new password): the code it had stays. Cleared only by set_code.
+            code = self.book().accounts.iter().find(|a| a.site == site && a.username == username.trim())
+                .map(|a| a.code.clone()).unwrap_or_default();
         }
         let otp_key = otp_key.map(str::trim).filter(|k| !k.is_empty()).map(str::to_string);
         if let Some(k) = &otp_key {
@@ -207,13 +222,42 @@ impl Vault {
         }
         let kept = serde_json::to_string(&Kept { p: password.to_string(), t: otp_key.clone() }).map_err(|e| e.to_string())?;
         self.store.set(&Vault::name(&site, username.trim()), &kept)?;
-        let account = Account { site, username: username.trim().to_string(), source: "vault".into(), has_otp: otp_key.is_some() };
+        let account = Account { site, username: username.trim().to_string(), source: "vault".into(), has_otp: otp_key.is_some(), code };
         let mut book = self.book();
         book.accounts.retain(|a| !(a.site == account.site && a.username == account.username));
         book.accounts.push(account.clone());
         book.accounts.sort_by(|a, b| (&a.site, &a.username).cmp(&(&b.site, &b.username)));
         self.save_book(&book).map_err(|e| e.to_string())?;
         Ok(account)
+    }
+
+    /// A code that reads (letters, digits, `-`, `_`, `.`, up to 40) and no other login has. "" is no code.
+    fn free_code(&self, code: &str, site: &str, username: &str) -> Result<String, String> {
+        let code = code.trim();
+        if code.is_empty() {
+            return Ok(String::new());
+        }
+        if code.len() > 40 || !code.chars().all(|c| c.is_alphanumeric() || "-_.".contains(c)) {
+            return Err("a code is letters, digits, - _ or . — up to 40, no spaces".into());
+        }
+        if let Some(other) = self.book().accounts.iter()
+            .find(|a| a.code.eq_ignore_ascii_case(code) && !(a.site == site && a.username == username)) {
+            return Err(format!("the code {code} is already the login of {} on {}", other.username, other.site));
+        }
+        Ok(code.to_string())
+    }
+
+    /// Give a kept login a code, or change or clear it ("").
+    pub fn set_code(&self, site: &str, username: &str, code: &str) -> Result<Account, String> {
+        let site = site_of(site);
+        let code = self.free_code(code, &site, username)?;
+        let mut book = self.book();
+        let account = book.accounts.iter_mut().find(|a| a.site == site && a.username == username)
+            .ok_or_else(|| format!("no kept login of {username} on {site}"))?;
+        account.code = code;
+        let out = account.clone();
+        self.save_book(&book).map_err(|e| e.to_string())?;
+        Ok(out)
     }
 
     pub fn remove(&self, site: &str, username: &str) -> Result<(), String> {
@@ -303,7 +347,7 @@ pub mod onepassword {
             if let Some(url) = urls.iter().find(|u| host_matches(u, host)) {
                 let id = item["id"].as_str().unwrap_or_default().to_string();
                 let username = item["additional_information"].as_str().unwrap_or_default().to_string();
-                out.push((Account { site: site_of(url), username, source: "1password".into(), has_otp: false }, id));
+                out.push((Account { site: site_of(url), username, source: "1password".into(), has_otp: false, code: String::new() }, id));
             }
         }
         Ok(out)
@@ -338,9 +382,18 @@ pub fn accounts_for(vault: &Vault, host: &str) -> Vec<Account> {
     out
 }
 
-/// The login to fill on `host`: the one named `username` when given, else the only one there is.
-pub fn login_for(vault: &Vault, host: &str, username: Option<&str>) -> Result<Login, String> {
+/// The login to fill on `host`: the one named by `which` — its code or its account — when given, else the
+/// only one there is. A code of a login of another site fills nothing: the page decides the site.
+pub fn login_for(vault: &Vault, host: &str, which: Option<&str>) -> Result<Login, String> {
     let book = vault.book();
+    if let Some(name) = which.map(str::trim).filter(|n| !n.is_empty()) {
+        if let Some(coded) = book.accounts.iter().find(|a| a.code.eq_ignore_ascii_case(name)) {
+            if !host_matches(&coded.site, host) {
+                return Err(format!("the code {name} is a login for {}, and this page is on {} — nothing was filled", coded.site, site_of(host)));
+            }
+            return vault.get(coded);
+        }
+    }
     let mut found: Vec<(Account, Option<String>)> =
         book.accounts.iter().filter(|a| host_matches(&a.site, host)).cloned().map(|a| (a, None)).collect();
     if book.onepassword {
@@ -348,8 +401,11 @@ pub fn login_for(vault: &Vault, host: &str, username: Option<&str>) -> Result<Lo
             found.extend(more.into_iter().map(|(a, id)| (a, Some(id))));
         }
     }
-    if let Some(name) = username.map(str::trim).filter(|n| !n.is_empty()) {
+    if let Some(name) = which.map(str::trim).filter(|n| !n.is_empty()) {
         found.retain(|(a, _)| a.username.eq_ignore_ascii_case(name));
+        if found.is_empty() {
+            return Err(format!("no saved login for {} is called {name} — neither a code nor an account", site_of(host)));
+        }
     }
     match found.len() {
         0 => Err(format!("no saved login for {} — add one in argus-bridge (This computer → Logins), or import your password manager's export", site_of(host))),
@@ -360,8 +416,9 @@ pub fn login_for(vault: &Vault, host: &str, username: Option<&str>) -> Result<Lo
                 None => vault.get(&account),
             }
         }
-        _ => Err(format!("{} logins for {}: say which account — {}", found.len(), site_of(host),
-                         found.iter().map(|(a, _)| a.username.as_str()).collect::<Vec<_>>().join(", "))),
+        _ => Err(format!("{} logins for {}: say which, by its code or its account — {}", found.len(), site_of(host),
+                         found.iter().map(|(a, _)| if a.code.is_empty() { a.username.clone() } else { format!("{} ({})", a.code, a.username) })
+                             .collect::<Vec<_>>().join(", "))),
     }
 }
 
@@ -574,11 +631,39 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_code_names_one_login_among_several_and_only_on_its_site() {
+        let tmp = tempfile::tempdir().unwrap();
+        let vault = Vault::with_store(tmp.path(), Box::new(Memory::default()));
+        vault.add_coded("login.example.com", "first@example.com", "p1", None, "XYZ").unwrap();
+        vault.add("login.example.com", "second@example.com", "p2", None).unwrap();
+        vault.add("login.example.com", "third@example.com", "p3", None).unwrap();
+        // Three on one site: by code, by account, and asked which (the codes said) when neither.
+        assert_eq!(login_for(&vault, "login.example.com", Some("xyz")).unwrap().account.username, "first@example.com");
+        assert_eq!(login_for(&vault, "login.example.com", Some("third@example.com")).unwrap().account.username, "third@example.com");
+        let which = login_for(&vault, "login.example.com", None).unwrap_err();
+        assert!(which.contains("XYZ (first@example.com)") && which.contains("second@example.com"), "{which}");
+        assert!(login_for(&vault, "login.example.com", Some("nobody")).unwrap_err().contains("neither a code nor an account"));
+        // The page decides the site: the code of this login fills nothing on another one.
+        assert!(login_for(&vault, "other.example.org", Some("XYZ")).unwrap_err().contains("nothing was filled"));
+        // Unique, readable, kept when the login is kept again, changed or cleared on purpose.
+        assert!(vault.add_coded("login.example.com", "second@example.com", "p2", None, "xyz").unwrap_err().contains("already"));
+        assert!(vault.set_code("login.example.com", "second@example.com", "two words").is_err());
+        vault.add("login.example.com", "first@example.com", "new", None).unwrap();
+        assert_eq!(vault.book().accounts.iter().find(|a| a.username == "first@example.com").unwrap().code, "XYZ");
+        assert_eq!(vault.set_code("login.example.com", "second@example.com", "LAB-2").unwrap().code, "LAB-2");
+        vault.set_code("login.example.com", "first@example.com", "").unwrap();
+        assert!(login_for(&vault, "login.example.com", Some("XYZ")).unwrap_err().contains("neither"));
+        // Not secret, so in the list; the passwords never are.
+        let book = std::fs::read_to_string(tmp.path().join("logins.json")).unwrap();
+        assert!(book.contains("LAB-2") && !book.contains("p2"));
+    }
+
+    #[test]
     fn a_login_goes_to_its_site_and_its_subdomains_only() {
-        assert!(host_matches("efsa.europa.eu", "wgsportal-test.efsa.europa.eu"));
-        assert!(host_matches("https://www.efsa.europa.eu/login", "efsa.europa.eu"));
-        assert!(!host_matches("efsa.europa.eu", "efsa.europa.eu.evil.com"));
-        assert!(!host_matches("efsa.europa.eu", "notefsa.europa.eu"));
+        assert!(host_matches("example.com", "login.example.com"));
+        assert!(host_matches("https://www.example.com/login", "example.com"));
+        assert!(!host_matches("example.com", "example.com.evil.com"));
+        assert!(!host_matches("example.com", "notexample.com"));
         assert!(!host_matches("", "anything"));
         assert_eq!(site_of("https://user@Accounts.Google.com:443/v3/signin?x=1"), "accounts.google.com");
     }
@@ -587,7 +672,7 @@ mod tests {
     fn a_secret_never_prints() {
         let s = Secret::new("hunter2");
         assert_eq!(format!("{s:?}"), "••••");
-        let login = Login { account: Account { site: "a.b".into(), username: "me".into(), source: "vault".into(), has_otp: false },
+        let login = Login { account: Account { site: "a.b".into(), username: "me".into(), source: "vault".into(), has_otp: false, code: String::new() },
                             password: s, otp: Some(Otp::Code(Secret::new("123456"))) };
         let said = format!("{login:?}");
         assert!(!said.contains("hunter2") && !said.contains("123456"), "{said}");

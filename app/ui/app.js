@@ -22,6 +22,7 @@ const PATHS = {
   terminal: 'M4 5h16v14H4zM7.5 10l2.5 2-2.5 2M12.5 14h4',
   play: 'M8 5.5v13l10.5-6.5z',
   key: 'M14.5 4a5.5 5.5 0 1 1-4.7 8.4L4 18.2V21h3v-2h2v-2h2l1.4-1.4A5.5 5.5 0 0 1 14.5 4zM16 8.5h.01',
+  tag: 'M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9-9-9zM8 8h.01',
   gear: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
   check: 'M5 12.5l4.5 4.5L19 7.5',
   trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13',
@@ -492,7 +493,7 @@ function browserSettings(m) {
   const other = el('input', { type: 'text', id: 'browserpath', placeholder: '/Applications/…/Contents/MacOS/…', spellcheck: false });
   pick.value = !b.exe ? '' : found.includes(b.exe) ? b.exe : '…';
   other.value = pick.value === '…' ? b.exe : '';
-  const flags = el('input', { type: 'text', id: 'browserflags', value: b.flags || '', placeholder: '--lang=it --window-size=1400,900', spellcheck: false });
+  const flags = el('input', { type: 'text', id: 'browserflags', value: b.flags || '', placeholder: '--window-size=1400,900', spellcheck: false });
   const save = el('button', { className: 'small primary', type: 'button', textContent: t('Save') });
   save.onclick = async () => {
     await run('machine_browser', { hideAutomation: hide.checked, exe: pick.value === '…' ? other.value : pick.value, flags: flags.value });
@@ -546,6 +547,10 @@ function loginsPage() {
       el('span', { className: 'favicon', textContent: (a.site.replace(/^www\./, '')[0] || '?') }),
       el('div', { className: 'label' }, [el('span', { className: 'site', textContent: a.site }), el('span', { className: 'acct', textContent: a.username })]),
       el('div', { className: 'badges' }, [
+        // The code: what you tell an agent to use. Pressed to give one, change it or clear it.
+        a.source === '1password' ? null : el('button', { type: 'button', className: `chip code${a.code ? ' on' : ''}`,
+          title: a.code ? t('Tell an agent: sign in with {code}', { code: a.code }) : t('Give it a code to tell an agent which login to use'),
+          onclick: () => codeSheet(a) }, [icon('tag'), a.code || t('add a code')]),
         a.has_otp ? el('span', { className: 'chip ok', textContent: t('one-time codes') }) : null,
         el('span', { className: 'chip', textContent: a.source === '1password' ? '1Password' : t('keychain') }),
       ]),
@@ -585,15 +590,16 @@ function loginsPage() {
 }
 
 function addLoginSheet() {
-  const site = el('input', { type: 'text', id: 'loginsite', placeholder: 'wgsportal-test.efsa.europa.eu', spellcheck: false });
+  const site = el('input', { type: 'text', id: 'loginsite', placeholder: 'login.example.com', spellcheck: false });
   const user = el('input', { type: 'text', id: 'loginuser', autocomplete: 'off', spellcheck: false });
   const pass = el('input', { type: 'password', id: 'loginpass', autocomplete: 'new-password' });
   const otp = el('input', { type: 'text', id: 'loginotp', placeholder: t('optional — the key or the otpauth:// link'), spellcheck: false });
+  const code = el('input', { type: 'text', id: 'logincode', placeholder: t('optional — for example WORK or LAB-2'), spellcheck: false, autocomplete: 'off' });
   const err = el('p', { className: 'err', hidden: true });
   const go = el('button', { className: 'primary', type: 'button', textContent: t('Keep it') });
   go.onclick = async () => {
     try {
-      await invoke('login_add', { site: site.value, username: user.value, password: pass.value, otp: otp.value });
+      await invoke('login_add', { site: site.value, username: user.value, password: pass.value, otp: otp.value, code: code.value });
       pass.value = '';
       shut();
       toast(t('Kept in the keychain'));
@@ -601,8 +607,33 @@ function addLoginSheet() {
   };
   sheet(t('A login for agents'), [
     el('label', {}, [t('Site'), site]), el('label', {}, [t('Account'), user]), el('label', {}, [t('Password'), pass]),
-    el('label', {}, [t('One-time codes'), otp]), err,
+    el('label', {}, [t('One-time codes'), otp]),
+    el('label', {}, [t('Code'), code, el('span', { className: 'hint', textContent: codeHint() })]), err,
   ], [el('button', { type: 'button', textContent: t('Cancel'), onclick: shut }), go]);
+}
+
+const codeHint = () => t('A name of yours for this login. Tell an agent “sign in with WORK” and it uses this one — useful when a site has several accounts. The agent never sees the account or the password.');
+
+/** A kept login's code: given, changed or cleared. */
+function codeSheet(a) {
+  const code = el('input', { type: 'text', id: 'logincode', value: a.code || '', placeholder: t('optional — for example WORK or LAB-2'), spellcheck: false, autocomplete: 'off' });
+  const err = el('p', { className: 'err', hidden: true });
+  const set = async (value) => {
+    try {
+      await invoke('login_code', { site: a.site, username: a.username, code: value });
+      shut();
+      toast(value ? t('Tell an agent: sign in with {code}', { code: value }) : t('Code cleared'));
+    } catch (e) { err.textContent = explain(e); err.hidden = false; }
+  };
+  const go = el('button', { className: 'primary', type: 'button', textContent: t('Save'), onclick: () => set(code.value.trim()) });
+  code.onkeydown = (e) => { if (e.key === 'Enter') go.click(); };
+  sheet(t('A code for {account} on {site}', { account: a.username, site: a.site }), [
+    el('label', {}, [t('Code'), code, el('span', { className: 'hint', textContent: codeHint() })]), err,
+  ], [
+    a.code ? el('button', { type: 'button', className: 'danger', textContent: t('Clear'), onclick: () => set('') }) : null,
+    el('button', { type: 'button', textContent: t('Cancel'), onclick: shut }), go,
+  ].filter(Boolean));
+  setTimeout(() => code.focus(), 0);
 }
 
 /* On a Mac with Terminal or Actions lent and no Full Disk Access: macOS would stop an agent's command at
