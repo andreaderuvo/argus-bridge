@@ -233,7 +233,7 @@ def test_logins_for_agents_are_kept_and_switched_from_the_window(make_page):
     page.click_text("Keep it")
     page.wait("[...document.querySelectorAll('.item.login')].some(r => r.textContent.includes('portal.example.org'))", what="kept")
     assert "p4ss" not in page.eval("document.body.innerText")
-    page.eval("[...document.querySelectorAll('.item.login')].find(r => r.textContent.includes('portal.example.org')).querySelector('button.iconbtn').click()")
+    page.eval("[...document.querySelectorAll('.item.login')].find(r => r.textContent.includes('portal.example.org')).querySelector('button.iconbtn.remove').click()")
     page.wait("window.__mock.calls.some(c => c[0] === 'login_remove' && c[1].site === 'portal.example.org')", what="removed")
 
 
@@ -254,12 +254,15 @@ def test_a_login_gets_a_code_to_tell_an_agent_which_one(make_page):
     page.wait("!!document.getElementById('logincode')", what="the code's sheet")
     page.eval("document.getElementById('logincode').value = 'WORK'")
     page.click_text("Save")
-    page.wait("window.__mock.calls.some(c => c[0] === 'login_code' && c[1].code === 'WORK')", what="given")
+    page.wait("window.__mock.calls.some(c => c[0] === 'login_edit' && c[1].code === 'WORK')", what="given")
     page.wait("[...document.querySelectorAll('.chip.code.on')].some(c => c.textContent === 'WORK')", what="shown")
-    # Cleared from the same sheet.
-    page.eval("[...document.querySelectorAll('.chip.code.on')].find(c => c.textContent === 'WORK').click()")
-    page.click_text("Clear")
-    page.wait("window.__mock.calls.some(c => c[0] === 'login_code' && c[1].code === '')", what="cleared")
+    # The site given wrong (a bare name for a whole domain, 2026-11-11) is changed in place, with the pencil.
+    page.eval("[...document.querySelectorAll('.item.login')].find(r => r.textContent.includes('WORK')).querySelector('.iconbtn.edit').click()")
+    page.wait("document.getElementById('loginsite')?.value === 'login.example.com'", what="the sheet, with its site")
+    page.eval("document.getElementById('loginsite').value = 'example.com'; document.getElementById('logincode').value = ''")
+    page.click_text("Save")
+    page.wait("window.__mock.calls.some(c => c[0] === 'login_edit' && c[1].newSite === 'example.com' && c[1].code === '')", what="moved, code cleared")
+    page.wait("[...document.querySelectorAll('.item.login .site')].some(s => s.textContent === 'example.com')", what="shown on its new site")
 
 
 def test_a_section_opened_stays_open_and_typing_is_not_wiped_by_a_repaint(make_page):

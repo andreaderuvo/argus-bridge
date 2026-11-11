@@ -75,7 +75,7 @@ window.__TAURI__ = {
         case 'machine_browser': state.machine = { ...state.machine, browser: { hide_automation: args.hideAutomation, exe: args.exe, flags: args.flags } }; break;
         case 'logins_set': state.machine = { ...state.machine, logins: { ...state.machine.logins, enabled: args.enabled, onepassword: args.onepassword } }; break;
         case 'login_add': state.machine.logins.accounts = [...state.machine.logins.accounts, { site: args.site, username: args.username, source: 'vault', has_otp: !!args.otp, code: args.code || '' }]; break;
-        case 'login_code': state.machine.logins.accounts = state.machine.logins.accounts.map((a) => (a.site === args.site && a.username === args.username ? { ...a, code: args.code } : a)); break;
+        case 'login_edit': state.machine.logins.accounts = state.machine.logins.accounts.map((a) => (a.site === args.site && a.username === args.username ? { ...a, site: args.newSite, code: args.code } : a)); break;
         case 'login_remove': state.machine.logins.accounts = state.machine.logins.accounts.filter((a) => !(a.site === args.site && a.username === args.username)); break;
         case 'set_language': state.language = args.lang; break;
         case 'machine_set': state.machine = { ...state.machine, offers: { browser: args.browser, terminal: args.terminal, actions: args.actions }, on: args.on, state: args.on ? 'connected' : 'off' }; break;

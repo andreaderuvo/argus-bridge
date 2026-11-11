@@ -232,6 +232,7 @@ impl Vault {
     }
 
     /// A code that reads (letters, digits, `-`, `_`, `.`, up to 40) and no other login has. "" is no code.
+    /// `site` and `username` are the login the code is for: its own code is not "taken".
     fn free_code(&self, code: &str, site: &str, username: &str) -> Result<String, String> {
         let code = code.trim();
         if code.is_empty() {
@@ -256,6 +257,36 @@ impl Vault {
             .ok_or_else(|| format!("no kept login of {username} on {site}"))?;
         account.code = code;
         let out = account.clone();
+        self.save_book(&book).map_err(|e| e.to_string())?;
+        Ok(out)
+    }
+
+    /// A kept login changed in place: its site (the secret moved in the keychain, never typed again) and its
+    /// code. A domain account kept for "lab" and used on jenkins.lab.example (2026-11-11): a site given wrong
+    /// could only be fixed by deleting the login and typing the password again.
+    pub fn edit(&self, site: &str, username: &str, new_site: &str, code: &str) -> Result<Account, String> {
+        let (site, new_site) = (site_of(site), site_of(new_site));
+        if new_site.is_empty() {
+            return Err("a login needs a site".into());
+        }
+        let mut book = self.book();
+        let at = book.accounts.iter().position(|a| a.site == site && a.username == username && a.source == "vault")
+            .ok_or_else(|| format!("no kept login of {username} on {site}"))?;
+        let code = self.free_code(code, &site, username)?;
+        if new_site != site {
+            if book.accounts.iter().any(|a| a.site == new_site && a.username == username) {
+                return Err(format!("{username} already has a login on {new_site}"));
+            }
+            let kept = self.store.get(&Vault::name(&site, username))
+                .map_err(|e| format!("the keychain did not give the login of {username} on {site}: {e}"))?;
+            self.store.set(&Vault::name(&new_site, username), &kept)?;
+            let _ = self.store.delete(&Vault::name(&site, username));
+        }
+        let account = &mut book.accounts[at];
+        account.site = new_site;
+        account.code = code;
+        let out = account.clone();
+        book.accounts.sort_by(|a, b| (&a.site, &a.username).cmp(&(&b.site, &b.username)));
         self.save_book(&book).map_err(|e| e.to_string())?;
         Ok(out)
     }
@@ -389,7 +420,9 @@ pub fn login_for(vault: &Vault, host: &str, which: Option<&str>) -> Result<Login
     if let Some(name) = which.map(str::trim).filter(|n| !n.is_empty()) {
         if let Some(coded) = book.accounts.iter().find(|a| a.code.eq_ignore_ascii_case(name)) {
             if !host_matches(&coded.site, host) {
-                return Err(format!("the code {name} is a login for {}, and this page is on {} — nothing was filled", coded.site, site_of(host)));
+                return Err(format!("the code {name} is a login for {}, and this page is on {} — nothing was filled. A login's \
+                    site covers its subdomains: to use it here, the person changes its site in argus-bridge (Logins, the \
+                    pencil on its row) to {}", coded.site, site_of(host), wider(host)));
             }
             return vault.get(coded);
         }
@@ -420,6 +453,14 @@ pub fn login_for(vault: &Vault, host: &str, which: Option<&str>) -> Result<Login
                          found.iter().map(|(a, _)| if a.code.is_empty() { a.username.clone() } else { format!("{} ({})", a.code, a.username) })
                              .collect::<Vec<_>>().join(", "))),
     }
+}
+
+/// The site to suggest for a host: its domain without the first name (`jenkins.lab.example` →
+/// `lab.example`, which covers the lab's other hosts too), or the host itself when it is short.
+fn wider(host: &str) -> String {
+    let host = site_of(host);
+    let parts: Vec<&str> = host.split('.').collect();
+    if parts.len() >= 3 && !host.chars().all(|c| c.is_ascii_digit() || c == '.') { parts[1..].join(".") } else { host }
 }
 
 /// The current code of a one-time-code key (a base32 secret, or an `otpauth://` link).
@@ -653,6 +694,15 @@ mod tests {
         assert_eq!(vault.set_code("login.example.com", "second@example.com", "LAB-2").unwrap().code, "LAB-2");
         vault.set_code("login.example.com", "first@example.com", "").unwrap();
         assert!(login_for(&vault, "login.example.com", Some("XYZ")).unwrap_err().contains("neither"));
+        // A site given wrong is changed in place: the secret moves, the code stays, and the error said how.
+        vault.add_coded("lab", "domain-user", "dp", None, "LAB-ACCOUNT").unwrap();
+        let said = login_for(&vault, "jenkins.lab.example", Some("LAB-ACCOUNT")).unwrap_err();
+        assert!(said.contains("to lab.example"), "{said}");
+        vault.edit("lab", "domain-user", "lab.example", "LAB-ACCOUNT").unwrap();
+        let moved = login_for(&vault, "jenkins.lab.example", Some("LAB-ACCOUNT")).unwrap();
+        assert_eq!((moved.account.site.as_str(), moved.password.expose()), ("lab.example", "dp"));
+        assert!(login_for(&vault, "wiki.lab.example", Some("LAB-ACCOUNT")).is_ok(), "the domain's other hosts too");
+        assert!(vault.edit("lab.example", "domain-user", "", "").is_err());
         // Not secret, so in the list; the passwords never are.
         let book = std::fs::read_to_string(tmp.path().join("logins.json")).unwrap();
         assert!(book.contains("LAB-2") && !book.contains("p2"));

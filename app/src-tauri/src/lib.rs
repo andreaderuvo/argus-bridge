@@ -784,10 +784,11 @@ fn login_add(app: AppHandle, shared: tauri::State<Arc<Shared>>, site: String, us
     Ok(())
 }
 
-/// A kept login's code — what the person tells an agent ("sign in with XYZ") — given, changed or cleared.
+/// A kept login changed in place: its site (the password moved in the keychain, not typed again) and its
+/// code — what the person tells an agent ("sign in with XYZ").
 #[tauri::command]
-fn login_code(app: AppHandle, shared: tauri::State<Arc<Shared>>, site: String, username: String, code: String) -> Res<()> {
-    argus_sync_core::logins::Vault::new(&shared.dir).set_code(&site, &username, &code)?;
+fn login_edit(app: AppHandle, shared: tauri::State<Arc<Shared>>, site: String, username: String, new_site: String, code: String) -> Res<()> {
+    argus_sync_core::logins::Vault::new(&shared.dir).edit(&site, &username, &new_site, &code)?;
     publish(&app, &shared);
     Ok(())
 }
@@ -1124,7 +1125,7 @@ pub fn run() {
         .manage(shared.clone())
         .invoke_handler(tauri::generate_handler![
             get_snapshot, take_invite, inspect, connect, set_paused, pause_all, set_big, fetch, sync_now,
-            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget, update_now, open_argus, open_full_disk_settings, check_updates, set_auto_update, set_language, machine_browser, logins_set, login_add, login_code, login_remove, login_forget_always, logins_import
+            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget, update_now, open_argus, open_full_disk_settings, check_updates, set_auto_update, set_language, machine_browser, logins_set, login_add, login_edit, login_remove, login_forget_always, logins_import
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

@@ -23,6 +23,7 @@ const PATHS = {
   play: 'M8 5.5v13l10.5-6.5z',
   key: 'M14.5 4a5.5 5.5 0 1 1-4.7 8.4L4 18.2V21h3v-2h2v-2h2l1.4-1.4A5.5 5.5 0 0 1 14.5 4zM16 8.5h.01',
   tag: 'M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9-9-9zM8 8h.01',
+  pencil: 'M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4',
   gear: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
   check: 'M5 12.5l4.5 4.5L19 7.5',
   trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13',
@@ -550,11 +551,13 @@ function loginsPage() {
         // The code: what you tell an agent to use. Pressed to give one, change it or clear it.
         a.source === '1password' ? null : el('button', { type: 'button', className: `chip code${a.code ? ' on' : ''}`,
           title: a.code ? t('Tell an agent: sign in with {code}', { code: a.code }) : t('Give it a code to tell an agent which login to use'),
-          onclick: () => codeSheet(a) }, [icon('tag'), a.code || t('add a code')]),
+          onclick: () => editLoginSheet(a) }, [icon('tag'), a.code || t('add a code')]),
         a.has_otp ? el('span', { className: 'chip ok', textContent: t('one-time codes') }) : null,
         el('span', { className: 'chip', textContent: a.source === '1password' ? '1Password' : t('keychain') }),
       ]),
-      el('button', { className: 'ghost iconbtn', type: 'button', title: t('Remove this login'), ariaLabel: t('Remove this login'),
+      a.source === '1password' ? null : el('button', { className: 'ghost iconbtn edit', type: 'button', title: t('Change its site or code'), ariaLabel: t('Change its site or code'),
+        onclick: () => editLoginSheet(a) }, icon('pencil')),
+      el('button', { className: 'ghost iconbtn remove', type: 'button', title: t('Remove this login'), ariaLabel: t('Remove this login'),
         onclick: () => run('login_remove', { site: a.site, username: a.username }) }, icon('trash')),
     ]);
     return r;
@@ -606,7 +609,8 @@ function addLoginSheet() {
     } catch (e) { err.textContent = explain(e); err.hidden = false; }
   };
   sheet(t('A login for agents'), [
-    el('label', {}, [t('Site'), site]), el('label', {}, [t('Account'), user]), el('label', {}, [t('Password'), pass]),
+    el('label', {}, [t('Site'), site, el('span', { className: 'hint', textContent: siteHint() })]),
+    el('label', {}, [t('Account'), user]), el('label', {}, [t('Password'), pass]),
     el('label', {}, [t('One-time codes'), otp]),
     el('label', {}, [t('Code'), code, el('span', { className: 'hint', textContent: codeHint() })]), err,
   ], [el('button', { type: 'button', textContent: t('Cancel'), onclick: shut }), go]);
@@ -614,26 +618,27 @@ function addLoginSheet() {
 
 const codeHint = () => t('A name of yours for this login. Tell an agent “sign in with WORK” and it uses this one — useful when a site has several accounts. The agent never sees the account or the password.');
 
-/** A kept login's code: given, changed or cleared. */
-function codeSheet(a) {
+const siteHint = () => t('The site covers its subdomains: example.com is also used on login.example.com. For an account used across a whole domain, give the domain.');
+
+/** A kept login changed: its site (the password stays where it is, not typed again) and its code. */
+function editLoginSheet(a) {
+  const site = el('input', { type: 'text', id: 'loginsite', value: a.site, spellcheck: false, autocomplete: 'off' });
   const code = el('input', { type: 'text', id: 'logincode', value: a.code || '', placeholder: t('optional — for example WORK or LAB-2'), spellcheck: false, autocomplete: 'off' });
   const err = el('p', { className: 'err', hidden: true });
-  const set = async (value) => {
+  const go = el('button', { className: 'primary', type: 'button', textContent: t('Save') });
+  go.onclick = async () => {
     try {
-      await invoke('login_code', { site: a.site, username: a.username, code: value });
+      await invoke('login_edit', { site: a.site, username: a.username, newSite: site.value.trim(), code: code.value.trim() });
       shut();
-      toast(value ? t('Tell an agent: sign in with {code}', { code: value }) : t('Code cleared'));
+      toast(code.value.trim() ? t('Tell an agent: sign in with {code}', { code: code.value.trim() }) : t('Saved'));
     } catch (e) { err.textContent = explain(e); err.hidden = false; }
   };
-  const go = el('button', { className: 'primary', type: 'button', textContent: t('Save'), onclick: () => set(code.value.trim()) });
-  code.onkeydown = (e) => { if (e.key === 'Enter') go.click(); };
-  sheet(t('A code for {account} on {site}', { account: a.username, site: a.site }), [
+  for (const box of [site, code]) box.onkeydown = (e) => { if (e.key === 'Enter') go.click(); };
+  sheet(t('The login of {account}', { account: a.username }), [
+    el('label', {}, [t('Site'), site, el('span', { className: 'hint', textContent: siteHint() })]),
     el('label', {}, [t('Code'), code, el('span', { className: 'hint', textContent: codeHint() })]), err,
-  ], [
-    a.code ? el('button', { type: 'button', className: 'danger', textContent: t('Clear'), onclick: () => set('') }) : null,
-    el('button', { type: 'button', textContent: t('Cancel'), onclick: shut }), go,
-  ].filter(Boolean));
-  setTimeout(() => code.focus(), 0);
+  ], [el('button', { type: 'button', textContent: t('Cancel'), onclick: shut }), go]);
+  setTimeout(() => (a.code ? site : code).focus(), 0);
 }
 
 /* On a Mac with Terminal or Actions lent and no Full Disk Access: macOS would stop an agent's command at
