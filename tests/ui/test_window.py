@@ -251,3 +251,28 @@ def test_a_section_opened_stays_open_and_typing_is_not_wiped_by_a_repaint(make_p
     page.eval("document.getElementById('browserflags').focus(); document.getElementById('browserflags').value = '--lang=it'")
     page.eval("window.__mock.emit('snapshot', window.__mock.state)")
     assert page.eval("document.getElementById('browserflags').value") == "--lang=it", "typing kept"
+
+
+def test_a_click_survives_a_repaint_between_press_and_release(make_page):
+    """"Open Argus did not open at the first click; the sidebar's clicks do not always work" (2026-11-11). The
+    state arrives several times a second while folders sync, and every arrival rebuilt the sidebar and the
+    button: pressed on one element, released on its replacement, the click was lost."""
+    page = make_page("?machine")
+    page.wait("!document.querySelector('#argus').hidden", what="Open Argus offered")
+    emit = "window.__mock.emit('snapshot', structuredClone(window.__mock.state))"
+
+    def press_repaint_release(finder):
+        x, y = page._center(finder)
+        page.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y, "button": "none"})
+        page.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1})
+        page.eval(emit)
+        page.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1})
+
+    # The icon inside the button, where a finger or a pointer often lands.
+    press_repaint_release("document.querySelector('#argus svg')")
+    page.wait("window.__mock.calls.some(c => c[0] === 'open_argus')", timeout=3, what="Open Argus at the first click")
+    press_repaint_release("document.querySelector('#nav [data-page=settings] svg')")
+    page.wait("document.querySelector('#nav [data-page=settings]').classList.contains('on')", timeout=3, what="the sidebar at the first click")
+    # The repaint held during the press still happens afterwards.
+    page.eval("window.__mock.state.version = '9.9.9'; " + emit)
+    page.wait("document.querySelector('#version').textContent.includes('9.9.9')", timeout=3, what="painted after")

@@ -123,7 +123,18 @@ function typing() {
   const a = document.activeElement;
   return !!a && a.closest('#main') && (a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || (a.tagName === 'INPUT' && !['checkbox', 'radio', 'button'].includes(a.type)));
 }
-document.addEventListener('focusout', () => setTimeout(() => { if (paintLater && !typing()) { paintLater = false; paint(); } }, 0));
+function paintIfHeld() { if (paintLater && !typing() && !pressed) { paintLater = false; paint(); } }
+document.addEventListener('focusout', () => setTimeout(paintIfHeld, 0));
+
+/* A press waits for its click: drawn again between press and release, the button pressed is gone and
+ * the click with it — "Open Argus did not open at the first click", "the sidebar's clicks do not always
+ * work" (2026-11-11), with the state arriving several times a second while folders sync. The repaint
+ * comes after the click (a timeout after the release runs after it). */
+let pressed = false;
+document.addEventListener('pointerdown', () => { pressed = true; }, true);
+const released = () => setTimeout(() => { pressed = false; paintIfHeld(); }, 0);
+document.addEventListener('pointerup', released, true);
+document.addEventListener('pointercancel', released, true);
 
 /** A switch: a real checkbox (keyboard, screen readers) under a drawn knob. */
 function toggle(checked, onchange, { disabled = false, id } = {}) {
@@ -174,7 +185,7 @@ function showPage(to) {
   // Going elsewhere is leaving the field typed in: the page is drawn now, not when it is left.
   if (typing()) document.activeElement.blur();
   paintLater = false;
-  paint();
+  paint(true);
   $('#main').scrollTop = 0;
 }
 
@@ -196,12 +207,16 @@ function navBadge(key) {
   return null;
 }
 
-function paint() {
-  if (typing()) { paintLater = true; return; }
+function paint(now = false) {
+  if (!now && (typing() || pressed)) { paintLater = true; return; }
   $('#computer').textContent = snap.computer ? t('on {computer}', { computer: snap.computer }) : '';
   // Argus itself in a window of this app — when there is a server to open: this computer's, or a folder's.
   const argus = $('#argus');
-  argus.replaceChildren(icon('external'), t('Open Argus'));
+  // Built once per language, not at every state: a button rebuilt under the pointer loses its click.
+  if (argus.dataset.lang !== document.documentElement.lang + t('Open Argus')) {
+    argus.dataset.lang = document.documentElement.lang + t('Open Argus');
+    argus.replaceChildren(icon('external'), t('Open Argus'));
+  }
   argus.title = t('Argus in a window of its own, with the notifications of this computer');
   argus.hidden = !snap.machine && !snap.pairs.length;
   $('#version').textContent = snap.version ? `argus-bridge ${snap.version}` : '';
@@ -753,7 +768,15 @@ async function moveIt(p) {
 
 $('#argus').onclick = () => run('open_argus');
 document.documentElement.lang = (navigator.language || 'en').slice(0, 2);
-listen('snapshot', (e) => { snap = e.payload; paint(); });
+// The same state again changes nothing on screen: not drawn.
+let lastSnap = '';
+listen('snapshot', (e) => {
+  const said = JSON.stringify(e.payload);
+  if (said === lastSnap) return;
+  lastSnap = said;
+  snap = e.payload;
+  paint();
+});
 listen('invite', (e) => takeLink(e.payload));
 snap = await invoke('get_snapshot');
 paint();
