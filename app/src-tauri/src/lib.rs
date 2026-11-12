@@ -926,6 +926,16 @@ fn open_argus_window(app: &AppHandle, shared: &Shared) -> Res<()> {
         .or_else(|| Pairs::load(&shared.dir).pairs.first().map(|p| p.url.clone()))
         .ok_or_else(|| say("Connect this computer or a folder first: then Argus opens here", &[]))?;
     let parsed = url.parse::<tauri::Url>().map_err(|e| e.to_string())?;
+    // The clipboard, written by the page: a copy made in tmux (a selection, OSC 52) reaches it with no click
+    // to go with it, and WebKit refuses a write without one — "copy to clipboard, then ⌘V pastes nothing"
+    // (2026-11-12). Granted to this window on Argus's own address, and only the writing of text.
+    if let Some(origin) = argus_origin(&parsed) {
+        let _ = app.add_capability(tauri::ipc::CapabilityBuilder::new("argus-clipboard")
+            .remote(format!("{origin}/*"))
+            .local(false)
+            .window("argus")
+            .permission("clipboard-manager:allow-write-text"));
+    }
     let opener = app.clone();
     tauri::WebviewWindowBuilder::new(app, "argus", tauri::WebviewUrl::External(parsed))
         // A link Argus opens in a new tab (a URL in a session, a port, Search) goes to the computer's own
@@ -948,6 +958,15 @@ fn open_argus_window(app: &AppHandle, shared: &Shared) -> Res<()> {
         .build()
         .map_err(|e| e.to_string())
         .map(|w| to_front(app, &w))
+}
+
+/// `scheme://host[:port]` of Argus's address, as a capability's pattern wants it.
+fn argus_origin(url: &tauri::Url) -> Option<String> {
+    let host = url.host_str()?;
+    Some(match url.port() {
+        Some(port) => format!("{}://{host}:{port}", url.scheme()),
+        None => format!("{}://{host}", url.scheme()),
+    })
 }
 
 /// What a link may hand to the computer's browser: web pages and mail, never `file:`, `javascript:` or an
@@ -1118,6 +1137,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
@@ -1210,6 +1230,13 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_clipboard_is_granted_to_argus_own_address_only() {
+        let o = |u: &str| super::argus_origin(&u.parse().unwrap());
+        assert_eq!(o("http://lab-server:8090/#token=x").as_deref(), Some("http://lab-server:8090"));
+        assert_eq!(o("https://argus.example.org/").as_deref(), Some("https://argus.example.org"));
+    }
+
     #[test]
     fn only_web_pages_and_mail_leave_for_the_browser() {
         let ok = |u: &str| super::opens_outside(&u.parse().unwrap());

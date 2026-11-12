@@ -1,6 +1,6 @@
 [package]
 name = "argus-sync-app"
-version = "0.1.21"
+version = "0.1.22"
 edition = "2021"
 license = "MIT"
 description = "argus-bridge: a folder of an Argus server, kept in sync with a folder on this computer"
@@ -27,6 +27,8 @@ tauri-plugin-autostart = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-notification = "2"
+# The Argus window writes the clipboard: a copy made in tmux reaches the page with no click, and WebKit refuses it.
+tauri-plugin-clipboard-manager = "2"
 notify = "8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
