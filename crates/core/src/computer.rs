@@ -390,11 +390,52 @@ pub struct Browser {
     profile: PathBuf,
     extra: Vec<String>,
     now: Mutex<Option<Chrome>>,
+    /// Agents connected to it now, and when one last did something: what the app shows the person ("an agent
+    /// is using your browser", 2026-11-12 — ChatGPT and Claude say so; this browser said nothing).
+    driving: std::sync::atomic::AtomicUsize,
+    last: Mutex<Option<Instant>>,
+    /// Stopped by the person: every agent's connection closed, none let in again.
+    cut: AtomicBool,
+}
+
+/// One agent's connection to the browser, counted while it lasts.
+struct Driving<'a>(&'a Browser);
+
+impl Drop for Driving<'_> {
+    fn drop(&mut self) {
+        self.0.driving.fetch_sub(1, Ordering::Relaxed);
+        self.0.touch();
+    }
 }
 
 impl Browser {
     pub fn new(exe: PathBuf, profile: PathBuf, extra: Vec<String>) -> Browser {
-        Browser { exe, profile, extra, now: Mutex::new(None) }
+        Browser { exe, profile, extra, now: Mutex::new(None), driving: Default::default(), last: Mutex::new(None), cut: AtomicBool::new(false) }
+    }
+
+    fn touch(&self) {
+        *self.last.lock().unwrap() = Some(Instant::now());
+    }
+
+    fn drive(&self) -> Driving<'_> {
+        self.driving.fetch_add(1, Ordering::Relaxed);
+        self.touch();
+        Driving(self)
+    }
+
+    /// (agents connected now, how long since one last did something): an agent's tools connect for each step,
+    /// so "in use" is either, the second within a short while.
+    pub fn agents(&self) -> (usize, Option<Duration>) {
+        (self.driving.load(Ordering::Relaxed), self.last.lock().unwrap().map(|t| t.elapsed()))
+    }
+
+    /// Stop every agent in this browser now, and let none in again (until the browser is lent anew).
+    pub fn stop_agents(&self) {
+        self.cut.store(true, Ordering::Relaxed);
+    }
+
+    pub fn stopped(&self) -> bool {
+        self.cut.load(Ordering::Relaxed)
     }
 
     /// (port, `/devtools/browser/<id>`, started now): the Chrome running, or a new one if it was closed.
@@ -587,6 +628,10 @@ pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, logins: Option<&cra
                             Some("cdp") => {
                                 // Closed since? Started again, and Argus told its new address.
                                 let Some(b) = lent else { return };
+                                if b.stopped() {
+                                    let _ = out.send(json!({"op": "close", "ch": ch, "why": "the person stopped agents in this browser — they lend it again from argus-bridge"}));
+                                    return;
+                                }
                                 match b.ensure() {
                                     Ok((port, ws, restarted)) => {
                                         if restarted {
@@ -594,7 +639,7 @@ pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, logins: Option<&cra
                                         }
                                         let asked = frame.get("path").and_then(Value::as_str).unwrap_or("");
                                         let path = if asked.starts_with("/devtools/browser/") { ws.as_str() } else { asked };
-                                        cdp(ch, port, path, rx, out)
+                                        cdp(ch, port, path, rx, out, &b)
                                     }
                                     Err(e) => {
                                         let _ = out.send(json!({"op": "close", "ch": ch, "why": format!("the browser did not start again: {e}")}));
@@ -838,7 +883,8 @@ fn pump(ch: &str, port: u64, mut sock: TcpStream, inbox: Receiver<In>, out: &Out
 // ------------------------------------------------------------------------------------- the channels
 
 /// An agent's connection to the browser: Chrome's `ws://127.0.0.1:<port><path>`, both ways.
-fn cdp(ch: u64, port: u16, path: &str, inbox: Receiver<In>, out: Out) {
+fn cdp(ch: u64, port: u16, path: &str, inbox: Receiver<In>, out: Out, lent: &Browser) {
+    let _counted = lent.drive();
     let mut tab: WebSocket<MaybeTlsStream<TcpStream>> = match tungstenite::connect(format!("ws://127.0.0.1:{port}{path}")) {
         Ok((ws, _)) => ws,
         Err(e) => {
@@ -849,8 +895,14 @@ fn cdp(ch: u64, port: u16, path: &str, inbox: Receiver<In>, out: Out) {
     set_timeout(tab.get_ref(), TICK);
     let _ = out.send(json!({"op": "opened", "ch": ch}));
     let why = 'outer: loop {
+        if lent.stopped() {
+            let _ = tab.close(None);
+            let _ = tab.flush();
+            break "the person stopped agents in this browser".to_string();
+        }
         match tab.read() {
             Ok(Message::Text(text)) => {
+                lent.touch();
                 let _ = out.send(json!({"op": "msg", "ch": ch, "data": text.as_str()}));
             }
             Ok(Message::Binary(bytes)) => {
@@ -1038,6 +1090,23 @@ fn run(ch: u64, open: &Value, inbox: Receiver<In>, out: Out) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn agents_in_the_browser_are_counted_and_stopped_by_the_person() {
+        let b = Browser::new(PathBuf::from("/nowhere/chrome"), PathBuf::from("/tmp/no-profile"), vec![]);
+        assert_eq!(b.agents(), (0, None), "nobody yet");
+        {
+            let _one = b.drive();
+            let _two = b.drive();
+            assert_eq!(b.agents().0, 2);
+        }
+        let (now, since) = b.agents();
+        assert_eq!(now, 0, "both gone");
+        assert!(since.unwrap() < Duration::from_secs(1), "but one acted just now: still in use for a while");
+        assert!(!b.stopped());
+        b.stop_agents();
+        assert!(b.stopped(), "Stop: every connection ends, none let in again");
+    }
 
     #[test]
     fn a_link_from_argus_reads() {

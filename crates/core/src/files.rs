@@ -16,7 +16,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, UNIX_EPOCH};
 
 const CHUNK: usize = 192 * 1024;
 const LIST_MAX: usize = 500;
@@ -84,7 +84,7 @@ fn plain(e: &std::io::Error) -> String {
     }
 }
 
-pub fn serve(ch: u64, open: &Value, inbox: Receiver<In>, out: Out) {
+pub(crate) fn serve(ch: u64, open: &Value, inbox: Receiver<In>, out: Out) {
     let path = resolve(open.get("path").and_then(Value::as_str).unwrap_or(""));
     let close = |why: String| {
         let _ = out.send(json!({"op": "close", "ch": ch, "why": why}));

@@ -468,6 +468,7 @@ function computerPage() {
     pageHead(t('This computer'), t('Connected to Argus on {host}: what it lends, each one a switch.', { host: m.host }), [toggleOn],
       el('span', { className: `pill ${tone}`, textContent: t(label) })),
     m.message ? el('div', { className: 'callout' }, [icon('warn'), el('div', { className: 'body' }, [el('span', { textContent: explain(m.message) })])]) : null,
+    agentNote(m),
     fullDiskNote(m),
     el('section', { className: 'group machine' }, [
       el('div', { className: 'groupcap', textContent: t('What it lends') }),
@@ -664,6 +665,18 @@ function editLoginSheet(a) {
     el('label', {}, [t('Code'), code, el('span', { className: 'hint', textContent: codeHint() })]), err,
   ], [el('button', { type: 'button', textContent: t('Cancel'), onclick: shut }), go]);
   setTimeout(() => (a.code ? site : code).focus(), 0);
+}
+
+/* An agent is using the lent browser now: said here too, with the same Stop as the bar over every window. */
+function agentNote(m) {
+  if (!m.agent_busy) return null;
+  const stop = el('button', { className: 'danger small', type: 'button', id: 'stopagents',
+    title: t('Close every agent’s connection to the browser now, and lend it no more until you switch Browser on again') }, [icon('x'), t('Stop')]);
+  stop.onclick = async () => { stop.disabled = true; try { await invoke('stop_agents'); } catch (e) { toast(explain(e)); stop.disabled = false; } };
+  return el('section', { className: 'callout agentbusy' }, [icon('globe'), el('div', { className: 'body' }, [
+    el('b', { textContent: t('An agent is using your browser') }),
+    el('div', { className: 'acts' }, [stop]),
+  ])]);
 }
 
 /* On a Mac with Terminal or Actions lent and no Full Disk Access: macOS would stop an agent's command at

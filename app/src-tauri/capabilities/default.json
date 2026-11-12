@@ -2,7 +2,10 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "What the window may ask of the system",
-  "windows": ["main"],
+  "windows": [
+    "main",
+    "agentpill"
+  ],
   "permissions": [
     "core:default",
     "dialog:allow-open",

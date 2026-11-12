@@ -320,3 +320,17 @@ def test_logins_kept_where_the_system_never_asks_and_signed_in_without_asking(ma
     page.click("label:has(#neverask)")
     page.wait("window.__mock.calls.some(c => c[0] === 'logins_set' && c[1].neverAsk === true)", what="no more questions")
     page.wait("document.getElementById('neverask').checked", what="shown on")
+
+
+def test_an_agent_using_the_browser_is_said_and_stopped_from_the_window(make_page):
+    """"ChatGPT and Claude say they control the browser, we do not" (2026-11-12): while an agent uses the lent
+    browser, This computer says so with Stop; Stop asks the app to end it, and Browser goes off."""
+    page = make_page("?machine")
+    to(page, "computer")
+    page.wait("!!document.querySelector('.switch, .row')", what="the page")
+    assert not page.eval("!!document.getElementById('stopagents')"), "nothing said while no agent is at work"
+    page.eval("window.__mock.state.machine.agent_busy = true; window.__mock.emit('snapshot', structuredClone(window.__mock.state))")
+    page.wait("!!document.getElementById('stopagents')", what="the agent, said")
+    page.click("#stopagents")
+    page.wait("window.__mock.calls.some(c => c[0] === 'stop_agents')", what="asked of the app")
+    page.wait("!document.getElementById('stopagents')", what="and gone once stopped")

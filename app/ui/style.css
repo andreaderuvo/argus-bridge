@@ -241,3 +241,9 @@ a.link:hover { text-decoration: underline; }
   .sidefoot { display: none; }
   main { padding: 16px 16px 32px; }
 }
+
+/* An agent is using the lent browser: the accent, and a beat, so it reads as "happening now". */
+.callout.agentbusy { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--accent) 9%, var(--panel, transparent)); }
+.callout.agentbusy > svg { color: var(--accent); animation: agentbeat 1.6s ease-in-out infinite; }
+@keyframes agentbeat { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .callout.agentbusy > svg { animation: none; } }

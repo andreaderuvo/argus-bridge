@@ -101,6 +101,8 @@ struct MachineView {
     browsers: Vec<String>,
     /// The logins agents may be signed in with: names and sites only, never a secret.
     logins: LoginsView,
+    /// An agent is using the lent browser now (or did a moment ago).
+    agent_busy: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -157,6 +159,9 @@ struct Shared {
     /// A newer version found on GitHub (signed by us — the updater checks), ready to install.
     update: Mutex<Option<String>>,
     updates: Mutex<UpdatePrefs>,
+    /// The browser lent now, watched for agents using it; and whether one is (the floating bar).
+    lent: Mutex<Option<Arc<argus_sync_core::computer::Browser>>>,
+    agent_busy: Mutex<bool>,
 }
 
 /// How newer versions arrive: asked first (the default), or installed by themselves. A version you said
@@ -222,6 +227,7 @@ fn snapshot(shared: &Shared) -> Snapshot {
                 browsers: argus_sync_core::computer::browsers_here().iter().map(|p| p.display().to_string()).collect(),
                 browser: setup.browser,
                 logins: logins_view(&shared.dir),
+                agent_busy: *shared.agent_busy.lock().unwrap(),
             }
         }),
     }
@@ -233,7 +239,9 @@ fn publish(app: &AppHandle, shared: &Shared) {
     let busy = snap.pairs.iter().filter(|p| p.status.state == "syncing").count();
     let conflicts: usize = snap.pairs.iter().map(|p| p.status.conflicts.len()).sum();
     let off = snap.pairs.iter().filter(|p| matches!(p.status.state.as_str(), "offline" | "refused")).count();
-    let tip = if snap.pairs.is_empty() {
+    let tip = if *shared.agent_busy.lock().unwrap() {
+        tr("An agent is using your browser")
+    } else if snap.pairs.is_empty() {
         tr("argus-bridge — nothing connected")
     } else if snap.paused_all {
         tr("argus-bridge — paused")
@@ -657,6 +665,7 @@ fn start_machine(app: &AppHandle, shared: &Arc<Shared>) {
         } else {
             None
         };
+        *shared.lent.lock().unwrap() = browser.clone();
         let said = |line: &str| {
             if line.starts_with("connected to") {
                 set("connected", String::new());
@@ -720,6 +729,90 @@ fn start_machine(app: &AppHandle, shared: &Arc<Shared>) {
             Ended::Lost(why) => set("lost", why),
         }
     });
+}
+
+/// How long after an agent's last step the browser still counts as in use: its tools connect for each step.
+const AGENT_LINGER: Duration = Duration::from_secs(20);
+
+/// Watch the lent browser and say, over every window, while an agent is using it: "An agent is using your
+/// browser — Stop". ChatGPT and Claude say so when they drive a browser; this one said nothing (2026-11-12). A
+/// window of this app, not a mark in the page: websites cannot see it, so Google's sign-in is not put off.
+fn watch_agents(app: AppHandle, shared: Arc<Shared>) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_millis(500));
+        let busy = shared.lent.lock().unwrap().as_ref().map(|b| {
+            let (now, since) = b.agents();
+            !b.stopped() && (now > 0 || since.map(|d| d < AGENT_LINGER).unwrap_or(false))
+        }).unwrap_or(false);
+        let changed = {
+            let mut was = shared.agent_busy.lock().unwrap();
+            let changed = *was != busy;
+            *was = busy;
+            changed
+        };
+        if changed {
+            let on_main = app.clone();
+            let _ = app.run_on_main_thread(move || show_pill(&on_main, busy));
+            publish(&app, &shared);
+        }
+    });
+}
+
+fn show_pill(app: &AppHandle, busy: bool) {
+    if !busy {
+        if let Some(w) = app.get_webview_window("agentpill") {
+            let _ = w.hide();
+        }
+        return;
+    }
+    let w = match app.get_webview_window("agentpill") {
+        Some(w) => w,
+        None => match tauri::WebviewWindowBuilder::new(app, "agentpill", tauri::WebviewUrl::App("pill.html".into()))
+            .title("argus-bridge")
+            .inner_size(380.0, 44.0)
+            .resizable(false)
+            .decorations(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .focused(false)
+            .visible_on_all_workspaces(true)
+            .background_color(tauri::window::Color(18, 22, 29, 255))
+            .build()
+        {
+            Ok(w) => w,
+            Err(_) => return,
+        },
+    };
+    // At the top, in the middle, under the menu bar, of the screen it is on.
+    if let Ok(Some(screen)) = w.primary_monitor() {
+        let scale = screen.scale_factor();
+        let width = screen.size().width as f64 / scale;
+        let _ = w.set_position(tauri::LogicalPosition::new((width - 380.0) / 2.0, 34.0));
+    }
+    let _ = w.show();
+}
+
+/// Stop pressed: every agent's connection to the browser closed now, and Browser switched off here, so none
+/// comes back until the person lends it again.
+#[tauri::command]
+fn stop_agents(app: AppHandle, shared: tauri::State<Arc<Shared>>) -> Res<()> {
+    use argus_sync_core::computer::Setup;
+    if let Some(b) = shared.lent.lock().unwrap().as_ref() {
+        b.stop_agents();
+    }
+    if let Some(mut setup) = Setup::load(&shared.dir) {
+        setup.offers.browser = false;
+        setup.save(&shared.dir).map_err(|e| e.to_string())?;
+    }
+    *shared.agent_busy.lock().unwrap() = false;
+    show_pill(&app, false);
+    {
+        use tauri_plugin_notification::NotificationExt;
+        let _ = app.notification().builder().title("argus-bridge")
+            .body(tr("Agents stopped: the browser is no longer lent. Switch Browser on to lend it again.")).show();
+    }
+    start_machine(&app, shared.inner());
+    Ok(())
 }
 
 /// A link from Argus to connect this computer: kept, with every switch off until you turn it on.
@@ -1170,6 +1263,8 @@ pub fn run() {
         machine: Mutex::new(Machine::default()),
         update: Mutex::new(None),
         updates: Mutex::new(UpdatePrefs::load(&pair::config_dir())),
+        lent: Mutex::new(None),
+        agent_busy: Mutex::new(false),
     });
     let for_instance = shared.clone();
     tauri::Builder::default()
@@ -1188,10 +1283,11 @@ pub fn run() {
         .manage(shared.clone())
         .invoke_handler(tauri::generate_handler![
             get_snapshot, take_invite, inspect, connect, set_paused, pause_all, set_big, fetch, sync_now,
-            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget, update_now, open_argus, open_full_disk_settings, check_updates, set_auto_update, set_language, machine_browser, logins_set, logins_keep, login_add, login_edit, login_remove, login_forget_always, logins_import
+            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget, update_now, open_argus, open_full_disk_settings, check_updates, set_auto_update, set_language, machine_browser, logins_set, stop_agents, logins_keep, login_add, login_edit, login_remove, login_forget_always, logins_import
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
+            watch_agents(handle.clone(), shared.clone());
             #[cfg(any(windows, target_os = "linux"))]
             {
                 // Installers register the scheme; this makes a copy run from anywhere answer too.
@@ -1304,6 +1400,8 @@ mod tests {
             machine: Mutex::new(Machine::default()),
             update: Mutex::new(Some("9.9.9".into())),
             updates: Mutex::new(UpdatePrefs { auto: true, later: None, language: "it".into() }),
+            lent: Mutex::new(None),
+            agent_busy: Mutex::new(false),
         });
         let (tx, rx) = mpsc::channel();
         let sh = shared.clone();

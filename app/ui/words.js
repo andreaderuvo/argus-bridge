@@ -216,6 +216,11 @@ const IT = {
   "sealed file": "file cifrato",
   "Kept in argus-bridge’s sealed file": "Salvato nel file cifrato di argus-bridge",
   "Commands an agent asks to run here, and files it looks for, brings to Argus or puts here — each allowed by you, in Argus": "Comandi che un agente chiede di eseguire qui, e file che cerca, porta in Argus o mette qui — ognuno consentito da te, in Argus",
+  "An agent is using your browser": "Un agente sta usando il tuo browser",
+  "Stop": "Ferma",
+  "Close every agent’s connection to the browser now, and lend it no more until you switch Browser on again": "Chiude subito ogni collegamento degli agenti al browser, e non lo presta più finché non riaccendi Browser",
+  "An agent is using your browser — Stop it here": "Un agente sta usando il tuo browser — fermalo da qui",
+  "Agents stopped: the browser is no longer lent. Switch Browser on to lend it again.": "Agenti fermati: il browser non è più prestato. Riaccendi Browser per prestarlo di nuovo.",
 };
 const ES = {
   'Open Argus': 'Abrir Argus',
@@ -395,6 +400,11 @@ const ES = {
   "sealed file": "archivo cifrado",
   "Kept in argus-bridge’s sealed file": "Guardado en el archivo cifrado de argus-bridge",
   "Commands an agent asks to run here, and files it looks for, brings to Argus or puts here — each allowed by you, in Argus": "Comandos que un agente pide ejecutar aquí, y archivos que busca, lleva a Argus o deja aquí — cada uno permitido por ti, en Argus",
+  "An agent is using your browser": "Un agente está usando tu navegador",
+  "Stop": "Detener",
+  "Close every agent’s connection to the browser now, and lend it no more until you switch Browser on again": "Cierra ya cada conexión de los agentes al navegador, y no lo presta más hasta que vuelvas a activar Navegador",
+  "An agent is using your browser — Stop it here": "Un agente está usando tu navegador — detenlo aquí",
+  "Agents stopped: the browser is no longer lent. Switch Browser on to lend it again.": "Agentes detenidos: el navegador ya no se presta. Activa Navegador para prestarlo de nuevo.",
 };
 const FR = {
   'Open Argus': 'Ouvrir Argus',
@@ -574,6 +584,11 @@ const FR = {
   "sealed file": "fichier chiffré",
   "Kept in argus-bridge’s sealed file": "Conservé dans le fichier chiffré d’argus-bridge",
   "Commands an agent asks to run here, and files it looks for, brings to Argus or puts here — each allowed by you, in Argus": "Des commandes qu’un agent demande d’exécuter ici, et des fichiers qu’il cherche, apporte dans Argus ou dépose ici — chacun autorisé par vous, dans Argus",
+  "An agent is using your browser": "Un agent utilise votre navigateur",
+  "Stop": "Arrêter",
+  "Close every agent’s connection to the browser now, and lend it no more until you switch Browser on again": "Ferme tout de suite chaque connexion des agents au navigateur, et ne le prête plus avant que vous réactiviez Navigateur",
+  "An agent is using your browser — Stop it here": "Un agent utilise votre navigateur — arrêtez-le ici",
+  "Agents stopped: the browser is no longer lent. Switch Browser on to lend it again.": "Agents arrêtés : le navigateur n’est plus prêté. Réactivez Navigateur pour le prêter à nouveau.",
 };
 export const CATALOGUES = { it: IT, es: ES, fr: FR };
 const ALL = CATALOGUES;
