@@ -59,6 +59,8 @@ pub fn tr(key: &str) -> String {
         ("argus-bridge — {n} folder(s) cannot reach the server", "argus-bridge — {n} cartelle non raggiungono il server", "argus-bridge — {n} carpetas no llegan al servidor", "argus-bridge — {n} dossier(s) n’atteignent pas le serveur"),
         ("argus-bridge — syncing…", "argus-bridge — sincronizzazione…", "argus-bridge — sincronizando…", "argus-bridge — synchronisation…"),
         ("argus-bridge — up to date", "argus-bridge — tutto aggiornato", "argus-bridge — todo al día", "argus-bridge — à jour"),
+        ("{name} saved in Downloads", "{name} salvato in Download", "{name} guardado en Descargas", "{name} enregistré dans Téléchargements"),
+        ("{name} could not be downloaded", "{name} non è stato scaricato", "{name} no se pudo descargar", "{name} n’a pas pu être téléchargé"),
     ];
     let col = match lang().as_str() { "it" => 1, "es" => 2, "fr" => 3, _ => 0 };
     table.iter().find(|row| row.0 == key).map(|row| [row.0, row.1, row.2, row.3][col]).unwrap_or(key).to_string()

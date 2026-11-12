@@ -974,6 +974,28 @@ fn open_argus_window(app: &AppHandle, shared: &Shared) -> Res<()> {
         // Files dropped on Argus go to the page, which uploads them where they were dropped. The app's own
         // handler took every drop for itself, and the page never saw one (2026-11-12).
         .disable_drag_drop_handler()
+        // Downloads saved in Downloads (a name already there gets " (1)"), and said: with no handler the
+        // window cancelled every one — a file's Download, a catalogue, an export — without a word.
+        .on_download({
+            let app = app.clone();
+            let saving = Arc::new(Mutex::new(std::collections::HashMap::<String, PathBuf>::new()));
+            move |_, event| {
+                use tauri_plugin_notification::NotificationExt;
+                match event {
+                    tauri::webview::DownloadEvent::Requested { url, destination } => {
+                        saving.lock().unwrap().insert(url.to_string(), destination.clone());
+                    }
+                    tauri::webview::DownloadEvent::Finished { url, path, success } => {
+                        let at = path.or_else(|| saving.lock().unwrap().remove(url.as_str()));
+                        let name = at.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                        let body = tr(if success { "{name} saved in Downloads" } else { "{name} could not be downloaded" }).replace("{name}", &name);
+                        let _ = app.notification().builder().title("Argus").body(body).show();
+                    }
+                    _ => {}
+                }
+                true
+            }
+        })
         // Argus's own ground while it loads, not a white rectangle that reads as nothing opening.
         .background_color(tauri::window::Color(11, 14, 20, 255))
         .build()
