@@ -161,6 +161,114 @@ pub struct Book {
     /// 1Password looked in too (when its command line is installed and signed in).
     #[serde(default)]
     pub onepassword: bool,
+    /// Where the passwords are: "file" (argus-bridge's own sealed file) or "keychain" (the system's). "" is
+    /// the default — see `keep_of`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub keep: String,
+    /// Sign in without asking, on every site: for a person who automates everything and wants no question
+    /// (2026-11-12). Off unless switched on.
+    #[serde(default)]
+    pub never_ask: bool,
+}
+
+/// Where a book's passwords are. Unset: the sealed file on a Mac — the Keychain asks again after every update
+/// of an app without an Apple Developer ID, once per login ("I want to automate everything without these
+/// popups", 2026-11-12) — and the system's keychain elsewhere, where it does not; but always the keychain for
+/// a book that already has logins there from before the choice existed.
+pub fn keep_of(book: &Book) -> &'static str {
+    match book.keep.as_str() {
+        "file" => "file",
+        "keychain" => "keychain",
+        _ if book.accounts.iter().any(|a| a.source == "vault") => "keychain",
+        _ if cfg!(target_os = "macos") => "file",
+        _ => "keychain",
+    }
+}
+
+/// argus-bridge's own file of passwords, sealed (ChaCha20-Poly1305) with a key kept beside it, readable by
+/// this user only. It keeps the passwords out of every plain file and backup; it does not keep them from a
+/// program running as you, which the Keychain would ask about — the price of never being asked.
+pub struct Sealed {
+    dir: PathBuf,
+}
+
+impl Sealed {
+    pub fn new(dir: &Path) -> Sealed {
+        Sealed { dir: dir.to_path_buf() }
+    }
+
+    fn key(&self) -> Result<chacha20poly1305::Key, String> {
+        use chacha20poly1305::KeyInit;
+        let path = self.dir.join("logins.key");
+        if let Ok(bytes) = fs::read(&path) {
+            if bytes.len() == 32 {
+                return Ok(*chacha20poly1305::Key::from_slice(&bytes));
+            }
+            return Err("the key of the logins file does not read".into());
+        }
+        fs::create_dir_all(&self.dir).map_err(|e| e.to_string())?;
+        let key = chacha20poly1305::ChaCha20Poly1305::generate_key(&mut chacha20poly1305::aead::OsRng);
+        private_write(&path, key.as_slice())?;
+        Ok(key)
+    }
+
+    fn load(&self) -> Result<std::collections::BTreeMap<String, String>, String> {
+        use base64::Engine;
+        use chacha20poly1305::{aead::Aead, KeyInit};
+        let Ok(raw) = fs::read(self.dir.join("logins.sealed")) else { return Ok(Default::default()) };
+        let sealed = base64::engine::general_purpose::STANDARD.decode(raw.trim_ascii()).map_err(|_| "the logins file does not read".to_string())?;
+        if sealed.len() < 12 {
+            return Err("the logins file does not read".into());
+        }
+        let cipher = chacha20poly1305::ChaCha20Poly1305::new(&self.key()?);
+        let plain = cipher.decrypt(chacha20poly1305::Nonce::from_slice(&sealed[..12]), &sealed[12..])
+            .map_err(|_| "the logins file does not open with its key".to_string())?;
+        serde_json::from_slice(&plain).map_err(|_| "the logins file does not read".to_string())
+    }
+
+    fn save(&self, all: &std::collections::BTreeMap<String, String>) -> Result<(), String> {
+        use base64::Engine;
+        use chacha20poly1305::{aead::{Aead, AeadCore}, KeyInit};
+        let cipher = chacha20poly1305::ChaCha20Poly1305::new(&self.key()?);
+        let nonce = chacha20poly1305::ChaCha20Poly1305::generate_nonce(&mut chacha20poly1305::aead::OsRng);
+        let plain = serde_json::to_vec(all).map_err(|e| e.to_string())?;
+        let mut sealed = nonce.to_vec();
+        sealed.extend(cipher.encrypt(&nonce, plain.as_ref()).map_err(|_| "could not seal the logins".to_string())?);
+        let tmp = self.dir.join("logins.sealed.tmp");
+        private_write(&tmp, base64::engine::general_purpose::STANDARD.encode(sealed).as_bytes())?;
+        fs::rename(tmp, self.dir.join("logins.sealed")).map_err(|e| e.to_string())
+    }
+}
+
+/// Written readable by this user only.
+fn private_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    use std::io::Write;
+    options.open(path).and_then(|mut f| f.write_all(bytes)).map_err(|e| e.to_string())
+}
+
+impl Store for Sealed {
+    fn set(&self, name: &str, value: &str) -> Result<(), String> {
+        let mut all = self.load()?;
+        all.insert(name.into(), value.into());
+        self.save(&all)
+    }
+    fn get(&self, name: &str) -> Result<String, String> {
+        self.load()?.remove(name).ok_or_else(|| "not in the logins file".into())
+    }
+    fn delete(&self, name: &str) -> Result<(), String> {
+        let mut all = self.load()?;
+        if all.remove(name).is_some() {
+            self.save(&all)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -171,9 +279,39 @@ struct Kept {
 }
 
 impl Vault {
-    /// In the system's keychain.
+    /// Where the person chose (`keep_of`): argus-bridge's sealed file, or the system's keychain.
     pub fn new(dir: &Path) -> Vault {
-        Vault::with_store(dir, Box::new(Keychain))
+        let book: Book = fs::read(dir.join("logins.json")).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        Vault::with_store(dir, Vault::store_for(dir, keep_of(&book)))
+    }
+
+    fn store_for(dir: &Path, keep: &str) -> Box<dyn Store> {
+        if keep == "file" { Box::new(Sealed::new(dir)) } else { Box::new(Keychain) }
+    }
+
+    /// Every kept password moved to `to` ("file" or "keychain"), then the choice written. Each is written in
+    /// the new place before it is deleted from the old; one that cannot be read stops the move, with nothing lost.
+    pub fn move_to(&self, to: &str, to_store: &dyn Store) -> Result<usize, String> {
+        if to != "file" && to != "keychain" {
+            return Err("logins are kept in the file or in the keychain".into());
+        }
+        let mut book = self.book();
+        let mut moved = 0;
+        for a in book.accounts.iter().filter(|a| a.source == "vault") {
+            let name = Vault::name(&a.site, &a.username);
+            let value = self.store.get(&name).map_err(|e| format!("the login of {} on {} could not be read to move it: {e}", a.username, a.site))?;
+            to_store.set(&name, &value)?;
+            let _ = self.store.delete(&name);
+            moved += 1;
+        }
+        book.keep = to.to_string();
+        self.save_book(&book).map_err(|e| e.to_string())?;
+        Ok(moved)
+    }
+
+    /// The same, from the app: the store of `to` made here.
+    pub fn move_logins(dir: &Path, to: &str) -> Result<usize, String> {
+        Vault::new(dir).move_to(to, Vault::store_for(dir, to).as_ref())
     }
 
     pub fn with_store(dir: &Path, store: Box<dyn Store>) -> Vault {
@@ -647,7 +785,7 @@ pub fn serve_with(vault: &Vault, ask: Option<&AskLogin>, port: u16, frame: &Valu
         return Ok(json!({"host": host, "accounts": accounts_for(vault, &host)}));
     }
     let login = login_for(vault, &host, frame["account"].as_str())?;
-    let always = book.always.iter().any(|s| host_matches(s, &host));
+    let always = book.never_ask || book.always.iter().any(|s| host_matches(s, &host));
     if !always {
         let Some(ask) = ask else {
             return Err(format!("{} is not among the sites always allowed, and there is nobody here to ask (the command-line client)", site_of(&host)));
@@ -670,6 +808,46 @@ pub fn serve_with(vault: &Vault, ask: Option<&AskLogin>, port: u16, frame: &Valu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_sealed_file_keeps_passwords_out_of_plain_sight_and_logins_move_between_stores() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sealed = Sealed::new(tmp.path());
+        sealed.set("a.example\u{1f}me", "pa55-word").unwrap();
+        assert_eq!(sealed.get("a.example\u{1f}me").unwrap(), "pa55-word");
+        let on_disk = std::fs::read_to_string(tmp.path().join("logins.sealed")).unwrap();
+        assert!(!on_disk.contains("pa55") && !on_disk.contains("a.example"), "sealed, names too");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for f in ["logins.key", "logins.sealed"] {
+                assert_eq!(std::fs::metadata(tmp.path().join(f)).unwrap().permissions().mode() & 0o777, 0o600, "{f}");
+            }
+        }
+        // Another key: it does not open, and says so.
+        std::fs::write(tmp.path().join("logins.key"), [7u8; 32]).unwrap();
+        assert!(sealed.get("a.example\u{1f}me").unwrap_err().contains("does not open"));
+
+        // From the keychain (here a stand-in) to the file: every login moved, the choice written, nothing left behind.
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Vault::with_store(dir.path(), Box::new(Memory::default()));
+        vault.add("one.example", "me", "p1", None).unwrap();
+        vault.add("two.example", "me", "p2", Some("JBSWY3DPEHPK3PXP")).unwrap();
+        assert_eq!(keep_of(&vault.book()), "keychain", "a book with logins from before stays where they are");
+        let file = Sealed::new(dir.path());
+        assert_eq!(vault.move_to("file", &file).unwrap(), 2);
+        assert_eq!(keep_of(&vault.book()), "file");
+        let after = Vault::with_store(dir.path(), Box::new(Sealed::new(dir.path())));
+        let two = login_for(&after, "two.example", None).unwrap();
+        assert!(two.password.expose() == "p2" && two.otp.is_some());
+        assert!(vault.store.get(&Vault::name("one.example", "me")).is_err(), "gone from the old place");
+    }
+
+    #[test]
+    fn a_new_book_on_a_mac_keeps_its_logins_in_the_file() {
+        let fresh = Book::default();
+        assert_eq!(keep_of(&fresh), if cfg!(target_os = "macos") { "file" } else { "keychain" });
+    }
 
     #[test]
     fn a_code_names_one_login_among_several_and_only_on_its_site() {

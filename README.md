@@ -61,11 +61,15 @@ computer. The way password managers do it for agents (1Password's Secure Agentic
 - **you allow it here**: *Allow once*, *Always for this site*, or *No* (the command-line client signs in
   only where *Always* was chosen);
 - **every use in Argus's Journal** — site, account, where it came from; never the password.
+- **without asking**, if you switch it on: agents sign in on every site with no question — for when
+  everything is automated;
 - **a code of yours** for a login: tell an agent *"sign in with WORK"* and it uses that one — without
   seeing the account, and without asking which when a site has several.
 
 Where the logins come from (*This computer → Logins for agents*, off until switched on): argus-bridge's
-vault in the **system keychain** (macOS Keychain, Windows Credential Manager, Secret Service), added by
+vault — on a Mac **its own sealed file** (ChaCha20-Poly1305, readable by you only), because the Keychain asks
+again after every update of an app without an Apple Developer ID; elsewhere, or by choice, the **system
+keychain** (macOS Keychain, Windows Credential Manager, Secret Service) — added by
 hand or **imported from your password manager's CSV export** (Chrome, Apple Passwords, Firefox, Bitwarden,
 1Password — the file is offered to the trash after); **1Password** read live through its command line;
 **one-time codes** from a key kept with the login. Safari's and iCloud's passwords can only be read by

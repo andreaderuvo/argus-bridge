@@ -304,3 +304,19 @@ def test_a_click_survives_a_repaint_between_press_and_release(make_page):
     # The repaint held during the press still happens afterwards.
     page.eval("window.__mock.state.version = '9.9.9'; " + emit)
     page.wait("document.querySelector('#version').textContent.includes('9.9.9')", timeout=3, what="painted after")
+
+
+def test_logins_kept_where_the_system_never_asks_and_signed_in_without_asking(make_page):
+    """"I want to bypass these, I must be able to automate everything without these popups" (2026-11-12): the
+    Keychain asked again after every update. The logins can be moved to argus-bridge's own sealed file, and
+    agents can sign in with no question here at all."""
+    page = make_page("?machine&logins&keychain")
+    to(page, "logins")
+    page.wait("!!document.getElementById('movelogins')", what="where they are kept")
+    assert "asks again after each update" in page.text(".logins ~ .group")
+    page.click("#movelogins")
+    page.wait("window.__mock.calls.some(c => c[0] === 'logins_keep' && c[1].to === 'file')", what="moved to the file")
+    page.wait("document.querySelector('.logins ~ .group').textContent.includes('never asks')", what="said where they are now")
+    page.click("label:has(#neverask)")
+    page.wait("window.__mock.calls.some(c => c[0] === 'logins_set' && c[1].neverAsk === true)", what="no more questions")
+    page.wait("document.getElementById('neverask').checked", what="shown on")

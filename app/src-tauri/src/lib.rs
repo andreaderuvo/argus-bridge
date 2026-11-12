@@ -110,12 +110,16 @@ struct LoginsView {
     onepassword_installed: bool,
     accounts: Vec<argus_sync_core::logins::Account>,
     always: Vec<String>,
+    /// "file" or "keychain": where the passwords are.
+    keep: String,
+    never_ask: bool,
 }
 
 fn logins_view(dir: &Path) -> LoginsView {
     let book = argus_sync_core::logins::Vault::new(dir).book();
     LoginsView { enabled: book.enabled, onepassword: book.onepassword,
                  onepassword_installed: argus_sync_core::logins::onepassword::installed(),
+                 keep: argus_sync_core::logins::keep_of(&book).to_string(), never_ask: book.never_ask,
                  accounts: book.accounts, always: book.always }
 }
 
@@ -765,17 +769,31 @@ fn machine_browser(app: AppHandle, shared: tauri::State<Arc<Shared>>, hide_autom
 
 /// Signing agents in at all, and with 1Password too.
 #[tauri::command]
-fn logins_set(app: AppHandle, shared: tauri::State<Arc<Shared>>, enabled: bool, onepassword: bool) -> Res<()> {
+fn logins_set(app: AppHandle, shared: tauri::State<Arc<Shared>>, enabled: bool, onepassword: bool, never_ask: Option<bool>) -> Res<()> {
     let vault = argus_sync_core::logins::Vault::new(&shared.dir);
     let mut book = vault.book();
     book.enabled = enabled;
     book.onepassword = onepassword;
+    if let Some(never) = never_ask {
+        book.never_ask = never;
+    }
     vault.save_book(&book).map_err(|e| e.to_string())?;
     publish(&app, &shared);
     Ok(())
 }
 
-/// A login kept by hand: its secret goes straight into the system's keychain.
+/// Where the passwords are kept: every login moved to argus-bridge's sealed file or to the system's keychain.
+/// Moving out of the Keychain reads each one there, so macOS asks one last time for each.
+#[tauri::command]
+async fn logins_keep(app: AppHandle, shared: tauri::State<'_, Arc<Shared>>, to: String) -> Res<usize> {
+    let dir = shared.dir.clone();
+    let moved = tauri::async_runtime::spawn_blocking(move || argus_sync_core::logins::Vault::move_logins(&dir, &to))
+        .await.map_err(|e| e.to_string())??;
+    publish(&app, &shared);
+    Ok(moved)
+}
+
+/// A login kept by hand: its secret goes straight where the person keeps them (`logins_keep`).
 #[tauri::command]
 fn login_add(app: AppHandle, shared: tauri::State<Arc<Shared>>, site: String, username: String, password: String, otp: String, code: Option<String>) -> Res<()> {
     argus_sync_core::logins::Vault::new(&shared.dir)
@@ -1145,7 +1163,7 @@ pub fn run() {
         .manage(shared.clone())
         .invoke_handler(tauri::generate_handler![
             get_snapshot, take_invite, inspect, connect, set_paused, pause_all, set_big, fetch, sync_now,
-            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget, update_now, open_argus, open_full_disk_settings, check_updates, set_auto_update, set_language, machine_browser, logins_set, login_add, login_edit, login_remove, login_forget_always, logins_import
+            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget, update_now, open_argus, open_full_disk_settings, check_updates, set_auto_update, set_language, machine_browser, logins_set, logins_keep, login_add, login_edit, login_remove, login_forget_always, logins_import
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

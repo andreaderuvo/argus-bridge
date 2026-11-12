@@ -553,7 +553,7 @@ function loginsPage() {
           title: a.code ? t('Tell an agent: sign in with {code}', { code: a.code }) : t('Give it a code to tell an agent which login to use'),
           onclick: () => editLoginSheet(a) }, [icon('tag'), a.code || t('add a code')]),
         a.has_otp ? el('span', { className: 'chip ok', textContent: t('one-time codes') }) : null,
-        el('span', { className: 'chip', textContent: a.source === '1password' ? '1Password' : t('keychain') }),
+        el('span', { className: 'chip', textContent: a.source === '1password' ? '1Password' : l.keep === 'file' ? t('sealed file') : t('keychain') }),
       ]),
       a.source === '1password' ? null : el('button', { className: 'ghost iconbtn edit', type: 'button', title: t('Change its site or code'), ariaLabel: t('Change its site or code'),
         onclick: () => editLoginSheet(a) }, icon('pencil')),
@@ -572,11 +572,13 @@ function loginsPage() {
       el('div', { className: 'panel' }, [
         row({ glyph: 'key', title: t('Sign agents in with my saved logins'), hint: t('Off until you switch it on. Each sign-in is asked here first, unless the site is “Always”.'),
           on: !!l.enabled, control: el('label', { className: 'toggle check' }, [el('input', { type: 'checkbox', checked: !!l.enabled, onchange: (e) => save(e.target.checked, !!l.onepassword) }), el('span', { className: 'knob' })]) }),
-      ]),
+        // For whoever automates everything: no question here, on any site (2026-11-12).
+        l.enabled ? row({ glyph: 'play', title: t('Without asking me'), hint: t('Agents sign in on every site with no question here. Off: asked each time, unless the site is “Always”.'),
+          on: !!l.never_ask, control: toggle(l.never_ask, (on) => run('logins_set', { enabled: true, onepassword: !!l.onepassword, neverAsk: on }), { id: 'neverask' }) }) : null,
+      ].filter(Boolean)),
     ]),
     group(t('Where they come from'), [
-      row({ glyph: 'shield', title: t('The keychain of this computer'),
-        hint: kept === 1 ? t('1 login, added here or imported — encrypted by the system') : t('{n} logins, added here or imported — encrypted by the system', { n: kept }) }),
+      keptRow(l, kept),
       row({ glyph: 'key', title: '1Password', hint: l.onepassword_installed ? t('its logins too, read when needed — unlocked by its app')
         : t('install 1Password’s command line and turn on “Integrate with 1Password CLI” in its app'),
         control: toggle(l.onepassword, (on) => save(!!l.enabled, on), { disabled: !l.onepassword_installed }) }),
@@ -592,6 +594,29 @@ function loginsPage() {
   ];
 }
 
+/* Where the passwords are kept. The Keychain asks again after every update of argus-bridge, once per login —
+ * macOS ties its permission to the exact build of an app without an Apple Developer ID — so on a Mac they are
+ * kept in argus-bridge's own sealed file unless you choose the Keychain ("I want to automate everything without
+ * these popups", 2026-11-12). Moving reads each one where it is: out of the Keychain, macOS asks one last time. */
+function keptRow(l, kept) {
+  const inFile = l.keep === 'file';
+  const n = kept === 1 ? t('1 login') : t('{n} logins', { n: kept });
+  const move = el('button', { type: 'button', className: 'small', id: 'movelogins' },
+    [icon('sync'), inFile ? t('Move to the Keychain') : t('Move to argus-bridge’s file')]);
+  move.onclick = async () => {
+    move.disabled = true;
+    try {
+      const moved = await invoke('logins_keep', { to: inFile ? 'keychain' : 'file' });
+      toast(moved === 1 ? t('1 login moved') : t('{n} logins moved', { n: moved }));
+    } catch (e) { toast(explain(e)); move.disabled = false; }
+  };
+  return row({ glyph: 'shield',
+    title: inFile ? t('argus-bridge’s own file, sealed') : t('The keychain of this computer'),
+    hint: inFile ? t('{n} — the system never asks about them; readable only by programs running as you', { n })
+      : t('{n} — the system asks again after each update of argus-bridge, once per login', { n }),
+    control: move });
+}
+
 function addLoginSheet() {
   const site = el('input', { type: 'text', id: 'loginsite', placeholder: 'login.example.com', spellcheck: false });
   const user = el('input', { type: 'text', id: 'loginuser', autocomplete: 'off', spellcheck: false });
@@ -605,7 +630,7 @@ function addLoginSheet() {
       await invoke('login_add', { site: site.value, username: user.value, password: pass.value, otp: otp.value, code: code.value });
       pass.value = '';
       shut();
-      toast(t('Kept in the keychain'));
+      toast(snap.machine?.logins?.keep === 'file' ? t('Kept in argus-bridge’s sealed file') : t('Kept in the keychain'));
     } catch (e) { err.textContent = explain(e); err.hidden = false; }
   };
   sheet(t('A login for agents'), [
