@@ -15,7 +15,6 @@ const IT = {
   'Actions': 'Azioni',
   'A Chrome of its own (none of your sessions), for the agents on the server': 'Un Chrome tutto suo (nessuna delle tue sessioni), per gli agenti sul server',
   'A shell on this computer, in a window of Argus — for you': 'Una shell su questo computer, in una finestra di Argus — per te',
-  'A command an agent asks to run here — each one allowed by you, in Argus': 'Un comando che un agente chiede di eseguire qui — ognuno permesso da te, in Argus',
   'Connected': 'Collegato',
   'Connecting…': 'Collegamento…',
   'Off': 'Spento',
@@ -216,6 +215,7 @@ const IT = {
   "{n} — the system asks again after each update of argus-bridge, once per login": "{n} — il sistema chiede di nuovo dopo ogni aggiornamento di argus-bridge, una volta per login",
   "sealed file": "file cifrato",
   "Kept in argus-bridge’s sealed file": "Salvato nel file cifrato di argus-bridge",
+  "Commands an agent asks to run here, and files it looks for, brings to Argus or puts here — each allowed by you, in Argus": "Comandi che un agente chiede di eseguire qui, e file che cerca, porta in Argus o mette qui — ognuno consentito da te, in Argus",
 };
 const ES = {
   'Open Argus': 'Abrir Argus',
@@ -232,7 +232,6 @@ const ES = {
   'Actions': 'Acciones',
   'A Chrome of its own (none of your sessions), for the agents on the server': 'Un Chrome propio (ninguna de tus sesiones), para los agentes del servidor',
   'A shell on this computer, in a window of Argus — for you': 'Una shell en este ordenador, en una ventana de Argus — para ti',
-  'A command an agent asks to run here — each one allowed by you, in Argus': 'Un comando que un agente pide ejecutar aquí — cada uno permitido por ti, en Argus',
   'Connected': 'Conectado',
   'Connecting…': 'Conectando…',
   'Off': 'Apagado',
@@ -395,6 +394,7 @@ const ES = {
   "{n} — the system asks again after each update of argus-bridge, once per login": "{n} — el sistema vuelve a preguntar tras cada actualización de argus-bridge, una vez por inicio de sesión",
   "sealed file": "archivo cifrado",
   "Kept in argus-bridge’s sealed file": "Guardado en el archivo cifrado de argus-bridge",
+  "Commands an agent asks to run here, and files it looks for, brings to Argus or puts here — each allowed by you, in Argus": "Comandos que un agente pide ejecutar aquí, y archivos que busca, lleva a Argus o deja aquí — cada uno permitido por ti, en Argus",
 };
 const FR = {
   'Open Argus': 'Ouvrir Argus',
@@ -411,7 +411,6 @@ const FR = {
   'Actions': 'Actions',
   'A Chrome of its own (none of your sessions), for the agents on the server': 'Un Chrome à lui (aucune de vos sessions), pour les agents du serveur',
   'A shell on this computer, in a window of Argus — for you': 'Un shell sur cet ordinateur, dans une fenêtre d’Argus — pour vous',
-  'A command an agent asks to run here — each one allowed by you, in Argus': 'Une commande qu’un agent demande d’exécuter ici — chacune autorisée par vous, dans Argus',
   'Connected': 'Connecté',
   'Connecting…': 'Connexion…',
   'Off': 'Désactivé',
@@ -574,6 +573,7 @@ const FR = {
   "{n} — the system asks again after each update of argus-bridge, once per login": "{n} — le système redemande après chaque mise à jour d’argus-bridge, une fois par identifiant",
   "sealed file": "fichier chiffré",
   "Kept in argus-bridge’s sealed file": "Conservé dans le fichier chiffré d’argus-bridge",
+  "Commands an agent asks to run here, and files it looks for, brings to Argus or puts here — each allowed by you, in Argus": "Des commandes qu’un agent demande d’exécuter ici, et des fichiers qu’il cherche, apporte dans Argus ou dépose ici — chacun autorisé par vous, dans Argus",
 };
 export const CATALOGUES = { it: IT, es: ES, fr: FR };
 const ALL = CATALOGUES;

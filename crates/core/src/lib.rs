@@ -2,6 +2,7 @@
 //! server, through a sync key that opens that folder and nothing else.
 
 pub mod computer;
+pub mod files;
 pub mod engine;
 pub mod local;
 pub mod logins;

@@ -465,10 +465,10 @@ fn would_block(e: &tungstenite::Error) -> bool {
     matches!(e, tungstenite::Error::Io(io) if matches!(io.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut))
 }
 
-type Out = Sender<Value>;
+pub(crate) type Out = Sender<Value>;
 
 /// What a channel's thread is handed from Argus.
-enum In {
+pub(crate) enum In {
     Frame(Value),
     Close,
 }
@@ -565,9 +565,11 @@ pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, logins: Option<&cra
                             "cdp" if !offers.browser => Some("the browser is off on this computer"),
                             "pty" if !offers.terminal => Some("the terminal is off on this computer"),
                             "run" if !offers.actions => Some("actions are off on this computer"),
+                            // Files read and written here: the same power as a command run here, under the same switch.
+                            "file" if !offers.actions => Some("actions are off on this computer"),
                             "login" if !offers.browser => Some("the browser is off on this computer"),
                             "login" if logins.is_none() => Some("signing agents in is not offered by this client"),
-                            "cdp" | "pty" | "run" | "login" => None,
+                            "cdp" | "pty" | "run" | "login" | "file" => None,
                             _ => Some("not something this computer does"),
                         };
                         if let Some(why) = refuse {
@@ -600,6 +602,7 @@ pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, logins: Option<&cra
                                 }
                             }
                             Some("pty") => terminal(ch, &frame, rx, out),
+                            Some("file") => crate::files::serve(ch, &frame, rx, out),
                             // Signed in with a saved login (logins.rs): answered once, then closed.
                             Some("login") => {
                                 let port = lent.as_ref().and_then(|b| b.running()).map(|(p, _)| p);

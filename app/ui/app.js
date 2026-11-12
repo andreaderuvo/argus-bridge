@@ -419,7 +419,7 @@ function settingsPage() {
 const SWITCHES = () => [
   ['browser', 'globe', t('Browser'), t('A Chrome of its own (none of your sessions), for the agents on the server')],
   ['terminal', 'terminal', t('Terminal'), t('A shell on this computer, in a window of Argus — for you')],
-  ['actions', 'play', t('Actions'), t('A command an agent asks to run here — each one allowed by you, in Argus')],
+  ['actions', 'play', t('Actions'), t('Commands an agent asks to run here, and files it looks for, brings to Argus or puts here — each allowed by you, in Argus')],
 ];
 const MACHINE = {
   connected: ['Connected', 'ok'], connecting: ['Connecting…', 'busy'], lost: ['Cannot reach the server', 'bad'],
