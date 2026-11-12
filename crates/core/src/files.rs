@@ -206,7 +206,9 @@ mod tests {
         let home = dirs::home_dir().unwrap();
         assert_eq!(resolve("~/Downloads"), home.join("Downloads"));
         assert_eq!(resolve("Downloads"), home.join("Downloads"));
-        assert_eq!(resolve("/tmp/x"), PathBuf::from("/tmp/x"));
+        // An absolute path of this system stays as it is (/tmp/x is not one on Windows).
+        let absolute = std::env::temp_dir().join("x");
+        assert_eq!(resolve(&absolute.to_string_lossy()), absolute);
     }
 
     #[test]
