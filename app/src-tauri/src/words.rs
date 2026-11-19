@@ -26,6 +26,7 @@ pub fn tr(key: &str) -> String {
         ("Sync now", "Sincronizza ora", "Sincronizar ahora", "Synchroniser maintenant"),
         ("Quit", "Esci", "Salir", "Quitter"),
         ("Open Argus", "Apri Argus", "Abrir Argus", "Ouvrir Argus"),
+        ("Open Argus on {host}", "Apri Argus su {host}", "Abrir Argus en {host}", "Ouvrir Argus sur {host}"),
         ("Check for updates…", "Controlla aggiornamenti…", "Buscar actualizaciones…", "Rechercher des mises à jour…"),
         ("A new version of argus-bridge", "Una nuova versione di argus-bridge", "Una nueva versión de argus-bridge", "Une nouvelle version d’argus-bridge"),
         ("argus-bridge {version} is out (you have {current}). Update now? It restarts by itself; your folders and this computer's connection carry on.",

@@ -247,3 +247,14 @@ a.link:hover { text-decoration: underline; }
 .callout.agentbusy > svg { color: var(--accent); animation: agentbeat 1.6s ease-in-out infinite; }
 @keyframes agentbeat { 50% { opacity: .45; } }
 @media (prefers-reduced-motion: reduce) { .callout.agentbusy > svg { animation: none; } }
+
+/* Several Argus (This computer): a card each — who, its state and actions over its switches. */
+.machinehead { display: flex; align-items: center; justify-content: space-between; gap: .5rem 1rem; flex-wrap: wrap; padding: 0 .3rem; }
+.machinehead .who { display: flex; align-items: center; gap: .5rem; min-width: 0; color: var(--bright); }
+.machinehead .who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.machinehead .who .ico { color: var(--dim); }
+.machinehead .acts { display: flex; gap: .4rem; flex-wrap: wrap; }
+.hint.another { display: flex; align-items: center; gap: .45rem; padding: 0 .3rem; }
+.picklist { display: grid; gap: 6px; }
+.pickrow { display: flex; align-items: center; gap: .6rem; height: auto; padding: .6rem .75rem; text-align: left; }
+.pickrow .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }

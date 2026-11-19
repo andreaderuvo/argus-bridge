@@ -73,8 +73,17 @@ struct Snapshot {
     pairs: Vec<PairView>,
     paused_all: bool,
     computer: String,
-    /// This computer, connected to Argus (computer.rs): null when it never was.
-    machine: Option<MachineView>,
+    /// Every Argus this computer is connected to (computer.rs `Links`): empty when none.
+    machines: Vec<MachineView>,
+    /// How the lent browser starts — one browser, for every Argus that borrows it — and the browsers found here.
+    browser: argus_sync_core::computer::BrowserSettings,
+    browsers: Vec<String>,
+    /// Some Argus has Browser on.
+    lends_browser: bool,
+    /// The logins agents may be signed in with: names and sites only, never a secret.
+    logins: LoginsView,
+    /// An agent is using the lent browser now (or did a moment ago).
+    agent_busy: bool,
     /// This copy's version, and a newer one ready to install (null when this is the newest).
     version: String,
     update: Option<String>,
@@ -91,6 +100,8 @@ struct Snapshot {
 /// What the window shows of this computer's connection to Argus.
 #[derive(Debug, Clone, Serialize)]
 struct MachineView {
+    id: String,
+    url: String,
     host: String,
     name: String,
     offers: argus_sync_core::computer::Offers,
@@ -98,13 +109,6 @@ struct MachineView {
     /// off | connecting | connected | lost | given-back
     state: String,
     message: String,
-    /// How the lent browser starts, and the browsers found here to choose from.
-    browser: argus_sync_core::computer::BrowserSettings,
-    browsers: Vec<String>,
-    /// The logins agents may be signed in with: names and sites only, never a secret.
-    logins: LoginsView,
-    /// An agent is using the lent browser now (or did a moment ago).
-    agent_busy: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -157,11 +161,12 @@ struct Shared {
     invite: Mutex<Option<String>>,
     paused_all: Mutex<bool>,
     wake: Mutex<Option<mpsc::Sender<Wake>>>,
-    machine: Mutex<Machine>,
+    /// Each Argus's connection, by the link's id.
+    machines: Mutex<BTreeMap<String, Machine>>,
     /// A newer version found on GitHub (signed by us — the updater checks), ready to install.
     update: Mutex<Option<String>>,
     updates: Mutex<UpdatePrefs>,
-    /// The browser lent now, watched for agents using it; and whether one is (the floating bar).
+    /// The browser lent now — one, to every Argus that borrows it — watched for agents using it; and whether one is.
     lent: Mutex<Option<Arc<argus_sync_core::computer::Browser>>>,
     agent_busy: Mutex<bool>,
     /// The bar's ✕: hidden until the agent stops using the browser, back the next time one starts.
@@ -212,6 +217,10 @@ fn snapshot(shared: &Shared) -> Snapshot {
     // guard while asking for the second, and 0.1.10 hung on itself at its first drawing (2026-11-10).
     let prefs = shared.updates.lock().unwrap().clone();
     let pairs = Pairs::load(&shared.dir).pairs;
+    let links = argus_sync_core::computer::Links::load(&shared.dir);
+    let machines = shared.machines.lock().unwrap().iter().map(|(k, m)| (k.clone(), (m.state.clone(), m.message.clone())))
+        .collect::<BTreeMap<String, (String, String)>>();
+    let machines: BTreeMap<String, Machine> = machines.into_iter().map(|(k, (state, message))| (k, Machine { state, message, stop: None })).collect();
     let status = shared.status.lock().unwrap();
     Snapshot {
         pairs: pairs.into_iter().map(|p| PairView {
@@ -227,18 +236,20 @@ fn snapshot(shared: &Shared) -> Snapshot {
         auto_update: prefs.auto,
         agent_bar: !prefs.no_agent_bar,
         language: prefs.language,
-        machine: argus_sync_core::computer::Setup::load(&shared.dir).map(|setup| {
-            let m = shared.machine.lock().unwrap();
+        machines: links.links.iter().map(|setup| {
+            let m = machines.get(&setup.id);
+            let state = m.map(|m| m.state.clone()).filter(|s| !s.is_empty())
+                .unwrap_or_else(|| if setup.on { "connecting".into() } else { "off".into() });
             MachineView {
-                host: host_of(&setup.url), name: setup.name, offers: setup.offers, on: setup.on,
-                state: if m.state.is_empty() { if setup.on { "connecting".into() } else { "off".into() } } else { m.state.clone() },
-                message: m.message.clone(),
-                browsers: argus_sync_core::computer::browsers_here().iter().map(|p| p.display().to_string()).collect(),
-                browser: setup.browser,
-                logins: logins_view(&shared.dir),
-                agent_busy: *shared.agent_busy.lock().unwrap(),
+                id: setup.id.clone(), url: setup.url.clone(), host: host_of(&setup.url), name: setup.name.clone(),
+                offers: setup.offers, on: setup.on, state, message: m.map(|m| m.message.clone()).unwrap_or_default(),
             }
-        }),
+        }).collect(),
+        lends_browser: links.lends_browser(),
+        browsers: argus_sync_core::computer::browsers_here().iter().map(|p| p.display().to_string()).collect(),
+        browser: links.browser.clone(),
+        logins: logins_view(&shared.dir),
+        agent_busy: *shared.agent_busy.lock().unwrap(),
     }
 }
 
@@ -630,51 +641,86 @@ fn open_in(app: AppHandle, shared: tauri::State<Arc<Shared>>, id: String, rel: O
 
 // ------------------------------------------------------------------------------- this computer
 
-/// (Re)start this computer's connection to Argus as its setup says: stopped first, then — when it
-/// is on — a Chrome of its own if the browser is lent, and the bridge, made again when it drops.
-fn start_machine(app: &AppHandle, shared: &Arc<Shared>) {
-    use argus_sync_core::computer::{self, Ended, Setup};
+/// The one browser lent to every Argus that has Browser on: made when the first borrows it, stopped when none
+/// does, made again when its settings change (`renew`) or after Stop. None when no Chrome is here.
+fn lent_browser(shared: &Shared, links: &argus_sync_core::computer::Links, renew: bool) -> Option<Arc<argus_sync_core::computer::Browser>> {
+    let mut lent = shared.lent.lock().unwrap();
+    if !links.lends_browser() || renew {
+        if let Some(b) = lent.take() {
+            b.stop();
+        }
+        if !links.lends_browser() {
+            return None;
+        }
+    }
+    if lent.as_ref().map(|b| b.stopped()).unwrap_or(true) {
+        *lent = links.browser.exe().map(|exe| Arc::new(argus_sync_core::computer::Browser::new(exe, shared.dir.join("browser-profile"), links.browser.args())));
+    }
+    lent.clone()
+}
+
+/// Every connection made again: at start, and when what they share (the browser's settings) changed.
+fn start_machines(app: &AppHandle, shared: &Arc<Shared>, renew: bool) {
+    use std::sync::atomic::Ordering;
+    for (_, m) in std::mem::take(&mut *shared.machines.lock().unwrap()) {
+        if let Some(stop) = m.stop {
+            stop.store(true, Ordering::Relaxed);
+        }
+    }
+    let links = argus_sync_core::computer::Links::load(&shared.dir);
+    lent_browser(shared, &links, renew);
+    for link in &links.links {
+        start_link(app, shared, &link.id);
+    }
+    refresh_tray(app);
+    publish(app, shared);
+}
+
+/// (Re)start one Argus's connection as its link says: stopped first, then — when it is on — the bridge, made
+/// again when it drops, with the shared browser when it borrows it. The others are left as they are.
+fn start_link(app: &AppHandle, shared: &Arc<Shared>, id: &str) {
+    use argus_sync_core::computer::{self, Ended, Links};
     use std::sync::atomic::{AtomicBool, Ordering};
-    if let Some(stop) = shared.machine.lock().unwrap().stop.take() {
+    if let Some(stop) = shared.machines.lock().unwrap().get_mut(id).and_then(|m| m.stop.take()) {
         stop.store(true, Ordering::Relaxed);
     }
-    let Some(setup) = Setup::load(&shared.dir) else {
-        *shared.machine.lock().unwrap() = Machine::default();
+    let links = Links::load(&shared.dir);
+    let lent = lent_browser(shared, &links, false);
+    let Some(setup) = links.get(id).cloned() else {
+        shared.machines.lock().unwrap().remove(id);
+        refresh_tray(app);
         publish(app, shared);
         return;
     };
     if !setup.on {
-        *shared.machine.lock().unwrap() = Machine { state: "off".into(), ..Default::default() };
+        shared.machines.lock().unwrap().insert(id.to_string(), Machine { state: "off".into(), ..Default::default() });
         publish(app, shared);
         return;
     }
     let stop = Arc::new(AtomicBool::new(false));
-    *shared.machine.lock().unwrap() = Machine { state: "connecting".into(), message: String::new(), stop: Some(stop.clone()) };
+    shared.machines.lock().unwrap().insert(id.to_string(), Machine { state: "connecting".into(), message: String::new(), stop: Some(stop.clone()) });
     publish(app, shared);
-    let (app, shared) = (app.clone(), shared.clone());
+    let (app, shared, id) = (app.clone(), shared.clone(), id.to_string());
     std::thread::spawn(move || {
         let set = |state: &str, message: String| {
-            let mut m = shared.machine.lock().unwrap();
-            if m.stop.as_ref().map(|s| Arc::ptr_eq(s, &stop)).unwrap_or(false) {
-                m.state = state.into();
-                m.message = message;
+            let mut all = shared.machines.lock().unwrap();
+            if let Some(m) = all.get_mut(&id) {
+                if m.stop.as_ref().map(|s| Arc::ptr_eq(s, &stop)).unwrap_or(false) {
+                    m.state = state.into();
+                    m.message = message;
+                }
             }
-            drop(m);
+            drop(all);
             publish(&app, &shared);
         };
         let browser = if setup.offers.browser {
-            match setup.browser.exe() {
-                None => {
-                    set("connecting", say("No Chrome here: the browser is not lent (install Chrome, or switch Browser off)", &[]));
-                    None
-                }
-                // Started by the bridge, and again whenever an agent needs it after the window was closed.
-                Some(exe) => Some(Arc::new(computer::Browser::new(exe, shared.dir.join("browser-profile"), setup.browser.args()))),
+            if lent.is_none() {
+                set("connecting", say("No Chrome here: the browser is not lent (install Chrome, or switch Browser off)", &[]));
             }
+            lent
         } else {
             None
         };
-        *shared.lent.lock().unwrap() = browser.clone();
         let said = |line: &str| {
             if line.starts_with("connected to") {
                 set("connected", String::new());
@@ -686,6 +732,7 @@ fn start_machine(app: &AppHandle, shared: &Arc<Shared>) {
         // A question (Do it / No) is answered in the notification itself, where the system can.
         let bell_app = app.clone();
         let bell_shared = shared.clone();
+        let bell_link = id.clone();
         let bell = move |told: &computer::Told, answer: Option<computer::Answer>| {
             use tauri_plugin_notification::NotificationExt;
             let title = match told.why.as_str() {
@@ -694,7 +741,7 @@ fn start_machine(app: &AppHandle, shared: &Arc<Shared>) {
                 _ => say_plain("{session} has finished", &told.session),
             };
             if let Some(answer) = answer {
-                if ask_in_notification(&bell_app, &bell_shared, title.clone(), told, answer) {
+                if ask_in_notification(&bell_app, &bell_shared, &bell_link, title.clone(), told, answer) {
                     return;
                 }
             }
@@ -723,15 +770,15 @@ fn start_machine(app: &AppHandle, shared: &Arc<Shared>) {
         });
         let logins = argus_sync_core::logins::Logins { dir: shared.dir.clone(), ask: Some(ask) };
         let ended = computer::keep(&setup, browser.as_ref(), Some(&logins), &stop, &said, &bell);
-        if let Some(b) = &browser {
-            b.stop();
-        }
         match ended {
             Ended::GivenBack => {
-                // Disconnected in Argus: off here too, until switched on again.
-                let mut off = setup.clone();
-                off.on = false;
-                let _ = off.save(&shared.dir);
+                // Disconnected in that Argus: off here too, until switched on again. The others carry on.
+                let mut links = Links::load(&shared.dir);
+                if let Some(l) = links.get_mut(&id) {
+                    l.on = false;
+                }
+                let _ = links.save(&shared.dir);
+                lent_browser(&shared, &links, false);
                 set("given-back", String::new());
             }
             Ended::Stopped => {}
@@ -828,14 +875,15 @@ fn set_agent_bar(app: AppHandle, shared: tauri::State<Arc<Shared>>, on: bool) {
 /// comes back until the person lends it again.
 #[tauri::command]
 fn stop_agents(app: AppHandle, shared: tauri::State<Arc<Shared>>) -> Res<()> {
-    use argus_sync_core::computer::Setup;
     if let Some(b) = shared.lent.lock().unwrap().as_ref() {
         b.stop_agents();
     }
-    if let Some(mut setup) = Setup::load(&shared.dir) {
-        setup.offers.browser = false;
-        setup.save(&shared.dir).map_err(|e| e.to_string())?;
+    // Lent to nobody: Browser off for every Argus.
+    let mut links = argus_sync_core::computer::Links::load(&shared.dir);
+    for l in &mut links.links {
+        l.offers.browser = false;
     }
+    links.save(&shared.dir).map_err(|e| e.to_string())?;
     *shared.agent_busy.lock().unwrap() = false;
     show_pill(&app, false);
     {
@@ -843,50 +891,52 @@ fn stop_agents(app: AppHandle, shared: tauri::State<Arc<Shared>>) -> Res<()> {
         let _ = app.notification().builder().title("argus-bridge")
             .body(tr("Agents stopped: the browser is no longer lent. Switch Browser on to lend it again.")).show();
     }
-    start_machine(&app, shared.inner());
+    start_machines(&app, shared.inner(), false);
     Ok(())
 }
 
-/// A link from Argus to connect this computer: kept, with every switch off until you turn it on.
+/// A link from Argus to connect this computer: kept, beside the Argus it is already connected to (the same Argus
+/// linked again replaces its old link). Returns the link's id.
 #[tauri::command]
-fn machine_link(app: AppHandle, shared: tauri::State<Arc<Shared>>, link: String, browser: bool, terminal: bool, actions: bool) -> Res<()> {
-    use argus_sync_core::computer::{self, Offers, Setup};
+fn machine_link(app: AppHandle, shared: tauri::State<Arc<Shared>>, link: String, browser: bool, terminal: bool, actions: bool) -> Res<String> {
+    use argus_sync_core::computer::{self, Links, Offers, Setup};
     let invite = computer::parse_link(&link).ok_or_else(|| say("That is not a link from Argus to connect a computer", &[]))?;
-    let setup = Setup {
-        url: invite.url, key: invite.key, name: if invite.name.is_empty() { host_name() } else { invite.name },
-        offers: Offers { browser, terminal, actions }, on: true,
-        // Linked again: how its browser starts stays as the person set it.
-        browser: Setup::load(&shared.dir).map(|s| s.browser).unwrap_or_default(),
-    };
-    setup.save(&shared.dir).map_err(|e| e.to_string())?;
-    start_machine(&app, shared.inner());
-    Ok(())
+    let mut links = Links::load(&shared.dir);
+    let id = links.add(Setup {
+        id: String::new(), url: invite.url, key: invite.key, name: if invite.name.is_empty() { host_name() } else { invite.name },
+        offers: Offers { browser, terminal, actions }, on: true, browser: Default::default(),
+    });
+    links.save(&shared.dir).map_err(|e| e.to_string())?;
+    start_link(&app, shared.inner(), &id);
+    refresh_tray(&app);
+    Ok(id)
 }
 
-/// The switches, and whether it is connected at all.
+/// One Argus's switches, and whether it is connected at all.
 #[tauri::command]
-fn machine_set(app: AppHandle, shared: tauri::State<Arc<Shared>>, browser: bool, terminal: bool, actions: bool, on: bool) -> Res<()> {
-    use argus_sync_core::computer::{Offers, Setup};
-    let mut setup = Setup::load(&shared.dir).ok_or_else(|| say("This computer is not connected to Argus", &[]))?;
+fn machine_set(app: AppHandle, shared: tauri::State<Arc<Shared>>, id: String, browser: bool, terminal: bool, actions: bool, on: bool) -> Res<()> {
+    use argus_sync_core::computer::{Links, Offers};
+    let mut links = Links::load(&shared.dir);
+    let setup = links.get_mut(&id).ok_or_else(|| say("This computer is not connected to Argus", &[]))?;
     setup.offers = Offers { browser, terminal, actions };
     setup.on = on;
-    setup.save(&shared.dir).map_err(|e| e.to_string())?;
-    start_machine(&app, shared.inner());
+    links.save(&shared.dir).map_err(|e| e.to_string())?;
+    start_link(&app, shared.inner(), &id);
     Ok(())
 }
 
-/// How the lent browser starts — chosen by the person, used from its next start (the connection is made
-/// again, and with it the browser, which an agent's next call starts with these).
+/// How the lent browser starts — chosen by the person, used from its next start: every connection is made
+/// again, and with them the browser, which an agent's next call starts with these.
 #[tauri::command]
 fn machine_browser(app: AppHandle, shared: tauri::State<Arc<Shared>>, hide_automation: bool, exe: String, flags: String) -> Res<()> {
-    use argus_sync_core::computer::{BrowserSettings, Setup};
-    let mut setup = Setup::load(&shared.dir).ok_or_else(|| say("This computer is not connected to Argus", &[]))?;
+    use argus_sync_core::computer::{BrowserSettings, Links};
     if !exe.trim().is_empty() && !std::path::Path::new(exe.trim()).is_file() {
         return Err(say("There is no browser at {path}", &[("path", exe.trim().to_string())]));
     }
-    setup.browser = BrowserSettings { hide_automation, exe: exe.trim().to_string(), flags: flags.trim().to_string() };
-    setup.save(&shared.dir).map_err(|e| e.to_string())?;
-    start_machine(&app, shared.inner());
+    let mut links = Links::load(&shared.dir);
+    links.browser = BrowserSettings { hide_automation, exe: exe.trim().to_string(), flags: flags.trim().to_string() };
+    links.save(&shared.dir).map_err(|e| e.to_string())?;
+    start_machines(&app, shared.inner(), true);
     Ok(())
 }
 
@@ -975,13 +1025,14 @@ async fn logins_import(app: AppHandle, shared: tauri::State<'_, Arc<Shared>>) ->
 
 /// Forget the connection here (Argus keeps the computer listed until it is forgotten there too).
 #[tauri::command]
-fn machine_forget(app: AppHandle, shared: tauri::State<Arc<Shared>>) -> Res<()> {
-    use argus_sync_core::computer::Setup;
-    if let Some(stop) = shared.machine.lock().unwrap().stop.take() {
-        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+fn machine_forget(app: AppHandle, shared: tauri::State<Arc<Shared>>, id: String) -> Res<()> {
+    let mut links = argus_sync_core::computer::Links::load(&shared.dir);
+    links.remove(&id);
+    links.save(&shared.dir).map_err(|e| e.to_string())?;
+    if let Some(w) = app.get_webview_window(&format!("argus-{id}")) {
+        let _ = w.close();
     }
-    Setup::forget(&shared.dir).map_err(|e| e.to_string())?;
-    start_machine(&app, shared.inner());
+    start_link(&app, shared.inner(), &id);
     Ok(())
 }
 
@@ -1013,10 +1064,10 @@ fn open_full_disk_settings(app: AppHandle) -> Res<()> {
 /// Only on a Mac (NSUserNotification); elsewhere false, and the question is shown as a plain
 /// notification, answered in Argus.
 #[cfg(target_os = "macos")]
-fn ask_in_notification(app: &AppHandle, shared: &Arc<Shared>, title: String, told: &argus_sync_core::computer::Told, answer: argus_sync_core::computer::Answer) -> bool {
+fn ask_in_notification(app: &AppHandle, shared: &Arc<Shared>, link: &str, title: String, told: &argus_sync_core::computer::Told, answer: argus_sync_core::computer::Answer) -> bool {
     use mac_notification_sys::{MainButton, Notification, NotificationResponse};
     let (Some(yes), Some(no)) = (told.options.first().cloned(), told.options.get(1).cloned()) else { return false };
-    let (text, app, shared) = (told.text.clone(), app.clone(), shared.clone());
+    let (text, app, shared, link) = (told.text.clone(), app.clone(), shared.clone(), link.to_string());
     std::thread::spawn(move || {
         let _ = mac_notification_sys::set_application(&app.config().identifier);
         let said = Notification::new().title(&title).message(&text)
@@ -1025,7 +1076,7 @@ fn ask_in_notification(app: &AppHandle, shared: &Arc<Shared>, title: String, tol
             Ok(NotificationResponse::ActionButton(_)) => answer(yes),
             Ok(NotificationResponse::CloseButton(_)) => answer(no),
             Ok(NotificationResponse::Click) => {
-                let _ = open_argus_window(&app, &shared);
+                let _ = open_argus_window(&app, &shared, Some(&link));
             }
             _ => {}
         }
@@ -1034,7 +1085,7 @@ fn ask_in_notification(app: &AppHandle, shared: &Arc<Shared>, title: String, tol
 }
 
 #[cfg(not(target_os = "macos"))]
-fn ask_in_notification(_: &AppHandle, _: &Arc<Shared>, _: String, _: &argus_sync_core::computer::Told, _: argus_sync_core::computer::Answer) -> bool {
+fn ask_in_notification(_: &AppHandle, _: &Arc<Shared>, _: &str, _: String, _: &argus_sync_core::computer::Told, _: argus_sync_core::computer::Answer) -> bool {
     false
 }
 
@@ -1044,8 +1095,8 @@ fn ask_in_notification(_: &AppHandle, _: &Arc<Shared>, _: String, _: &argus_sync
 /// Async on purpose: a window made inside a synchronous command waits on the thread that has to draw it,
 /// and "Open Argus" sometimes took seconds, or a second press, to appear (2026-11-09).
 #[tauri::command]
-async fn open_argus(app: AppHandle, shared: tauri::State<'_, Arc<Shared>>) -> Res<()> {
-    open_argus_window(&app, &shared)
+async fn open_argus(app: AppHandle, shared: tauri::State<'_, Arc<Shared>>, id: Option<String>) -> Res<()> {
+    open_argus_window(&app, &shared, id.as_deref())
 }
 
 /// Bring this app to the front: pressed from the menu-bar icon, macOS shows a window of an app that is
@@ -1060,27 +1111,36 @@ fn to_front(app: &AppHandle, w: &tauri::WebviewWindow) {
     let _ = w.set_focus();
 }
 
-fn open_argus_window(app: &AppHandle, shared: &Shared) -> Res<()> {
-    if let Some(w) = app.get_webview_window("argus") {
+/// Each Argus in a window of its own (`argus-<link id>`), so two VMs are two windows side by side; with no link,
+/// the first folder's server (`argus`).
+fn open_argus_window(app: &AppHandle, shared: &Shared, id: Option<&str>) -> Res<()> {
+    let links = argus_sync_core::computer::Links::load(&shared.dir);
+    let chosen = id.and_then(|id| links.get(id)).or_else(|| links.links.first());
+    let label = chosen.map(|l| format!("argus-{}", l.id)).unwrap_or_else(|| "argus".to_string());
+    if let Some(w) = app.get_webview_window(&label) {
         to_front(app, &w);
         return Ok(());
     }
-    let url = argus_sync_core::computer::Setup::load(&shared.dir).map(|s| s.url)
+    let url = chosen.map(|l| l.url.clone())
         .or_else(|| Pairs::load(&shared.dir).pairs.first().map(|p| p.url.clone()))
         .ok_or_else(|| say("Connect this computer or a folder first: then Argus opens here", &[]))?;
+    let title = match chosen {
+        Some(l) if links.links.len() > 1 => format!("Argus — {}", host_of(&l.url)),
+        _ => "Argus".to_string(),
+    };
     let parsed = url.parse::<tauri::Url>().map_err(|e| e.to_string())?;
     // The clipboard, written by the page: a copy made in tmux (a selection, OSC 52) reaches it with no click
     // to go with it, and WebKit refuses a write without one — "copy to clipboard, then ⌘V pastes nothing"
     // (2026-11-12). Granted to this window on Argus's own address, and only the writing of text.
     if let Some(origin) = argus_origin(&parsed) {
-        let _ = app.add_capability(tauri::ipc::CapabilityBuilder::new("argus-clipboard")
+        let _ = app.add_capability(tauri::ipc::CapabilityBuilder::new(format!("argus-clipboard-{label}"))
             .remote(format!("{origin}/*"))
             .local(false)
-            .window("argus")
+            .window(label.clone())
             .permission("clipboard-manager:allow-write-text"));
     }
     let opener = app.clone();
-    tauri::WebviewWindowBuilder::new(app, "argus", tauri::WebviewUrl::External(parsed))
+    tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::External(parsed))
         // A link Argus opens in a new tab (a URL in a session, a port, Search) goes to the computer's own
         // browser. Unhandled, the webview dropped every window.open and the click did nothing
         // (andreaderuvo/argus#17, 2026-11-10).
@@ -1090,7 +1150,7 @@ fn open_argus_window(app: &AppHandle, shared: &Shared) -> Res<()> {
             }
             tauri::webview::NewWindowResponse::Deny
         })
-        .title("Argus")
+        .title(&title)
         .inner_size(1360.0, 880.0)
         .min_inner_size(420.0, 420.0)
         .focused(true)
@@ -1248,13 +1308,31 @@ fn set_language(app: AppHandle, shared: tauri::State<Arc<Shared>>, lang: String)
     Ok(())
 }
 
+/// The menu-bar menu: one "Open Argus on <host>" per Argus when there are several.
 fn tray_menu<R: tauri::Runtime, M: tauri::Manager<R>>(app: &M) -> tauri::Result<Menu<R>> {
-    let argus = MenuItem::with_id(app, "argus", tr("Open Argus"), true, None::<&str>)?;
+    let links = argus_sync_core::computer::Links::load(&pair::config_dir()).links;
+    let mut argus: Vec<MenuItem<R>> = Vec::new();
+    if links.len() > 1 {
+        for l in &links {
+            argus.push(MenuItem::with_id(app, format!("argus:{}", l.id), tr("Open Argus on {host}").replace("{host}", &host_of(&l.url)), true, None::<&str>)?);
+        }
+    } else {
+        argus.push(MenuItem::with_id(app, "argus", tr("Open Argus"), true, None::<&str>)?);
+    }
     let open = MenuItem::with_id(app, "open", tr("Open argus-bridge"), true, None::<&str>)?;
     let now = MenuItem::with_id(app, "now", tr("Sync now"), true, None::<&str>)?;
     let check = MenuItem::with_id(app, "check", tr("Check for updates…"), true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", tr("Quit"), true, None::<&str>)?;
-    Menu::with_items(app, &[&argus, &open, &now, &check, &quit])
+    let mut items: Vec<&dyn tauri::menu::IsMenuItem<R>> = argus.iter().map(|i| i as &dyn tauri::menu::IsMenuItem<R>).collect();
+    items.extend([&open as &dyn tauri::menu::IsMenuItem<R>, &now, &check, &quit]);
+    Menu::with_items(app, &items)
+}
+
+/// The menu made again: an Argus linked or forgotten.
+fn refresh_tray(app: &AppHandle) {
+    if let (Some(tray), Ok(menu)) = (app.tray_by_id("main"), tray_menu(app)) {
+        let _ = tray.set_menu(Some(menu));
+    }
 }
 
 /// Installed by themselves, or asked first.
@@ -1292,7 +1370,7 @@ pub fn run() {
         invite: Mutex::new(None),
         paused_all: Mutex::new(false),
         wake: Mutex::new(None),
-        machine: Mutex::new(Machine::default()),
+        machines: Mutex::new(BTreeMap::new()),
         update: Mutex::new(None),
         updates: Mutex::new(UpdatePrefs::load(&pair::config_dir())),
         lent: Mutex::new(None),
@@ -1347,7 +1425,12 @@ pub fn run() {
                     "open" => show(app),
                     "argus" => {
                         if let Some(sh) = app.try_state::<Arc<Shared>>() {
-                            let _ = open_argus_window(app, &sh);
+                            let _ = open_argus_window(app, &sh, None);
+                        }
+                    }
+                    other if other.starts_with("argus:") => {
+                        if let Some(sh) = app.try_state::<Arc<Shared>>() {
+                            let _ = open_argus_window(app, &sh, Some(&other["argus:".len()..]));
                         }
                     }
                     "now" => tray_shared.nudge(),
@@ -1379,8 +1462,8 @@ pub fn run() {
             let worker_shared = shared.clone();
             let machine_handle = handle.clone();
             std::thread::spawn(move || worker(handle, worker_shared, rx));
-            // This computer's connection to Argus, as it was left: on, it connects again.
-            start_machine(&machine_handle, &shared);
+            // This computer's connections to Argus, as they were left: those on connect again.
+            start_machines(&machine_handle, &shared, false);
             // A newer version, looked for at start and every six hours.
             let (up_handle, up_shared) = (machine_handle.clone(), shared.clone());
             std::thread::spawn(move || loop {
@@ -1430,7 +1513,7 @@ mod tests {
             invite: Mutex::new(None),
             paused_all: Mutex::new(false),
             wake: Mutex::new(None),
-            machine: Mutex::new(Machine::default()),
+            machines: Mutex::new(BTreeMap::new()),
             update: Mutex::new(Some("9.9.9".into())),
             updates: Mutex::new(UpdatePrefs { auto: true, later: None, language: "it".into(), no_agent_bar: false }),
             lent: Mutex::new(None),

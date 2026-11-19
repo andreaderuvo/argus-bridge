@@ -225,6 +225,10 @@ const IT = {
   "with Stop; off: the menu-bar icon and this page still say so": "con Ferma; spenta: l’icona nella barra dei menu e questa pagina lo dicono comunque",
   "Hide": "Nascondi",
   "Hide until the agent stops — switch the bar off in This computer → Browser settings": "Nascondi finché l’agente non smette — spegni la barra in Questo computer → Impostazioni del browser",
+  "Another Argus: in it, Settings → Computers → Connect a computer… — open the link it gives here. Each keeps its own switches.": "Un altro Argus: lì, Impostazioni → Computer → Collega un computer… — apri qui il link che ti dà. Ognuno tiene i suoi interruttori.",
+  "Connected to {n} Argus: each lends what its switches say.": "Collegato a {n} Argus: a ognuno presta ciò che dicono i suoi interruttori.",
+  "Open which Argus?": "Quale Argus aprire?",
+  "This computer stops lending anything to it. To connect it again, make a new link in that Argus.": "Questo computer smette di prestargli qualsiasi cosa. Per ricollegarlo, crea un nuovo link in quell’Argus.",
 };
 const ES = {
   'Open Argus': 'Abrir Argus',
@@ -413,6 +417,10 @@ const ES = {
   "with Stop; off: the menu-bar icon and this page still say so": "con Detener; apagada: el icono de la barra de menús y esta página lo siguen diciendo",
   "Hide": "Ocultar",
   "Hide until the agent stops — switch the bar off in This computer → Browser settings": "Ocultar hasta que el agente pare — apaga la barra en Este ordenador → Ajustes del navegador",
+  "Another Argus: in it, Settings → Computers → Connect a computer… — open the link it gives here. Each keeps its own switches.": "Otro Argus: en él, Ajustes → Equipos → Conectar un equipo… — abre aquí el enlace que da. Cada uno guarda sus interruptores.",
+  "Connected to {n} Argus: each lends what its switches say.": "Conectado a {n} Argus: a cada uno le presta lo que dicen sus interruptores.",
+  "Open which Argus?": "¿Qué Argus abrir?",
+  "This computer stops lending anything to it. To connect it again, make a new link in that Argus.": "Este equipo deja de prestarle nada. Para conectarlo de nuevo, crea un enlace nuevo en ese Argus.",
 };
 const FR = {
   'Open Argus': 'Ouvrir Argus',
@@ -601,6 +609,10 @@ const FR = {
   "with Stop; off: the menu-bar icon and this page still say so": "avec Arrêter ; désactivée : l’icône de la barre des menus et cette page le disent quand même",
   "Hide": "Masquer",
   "Hide until the agent stops — switch the bar off in This computer → Browser settings": "Masquer jusqu’à ce que l’agent s’arrête — désactivez la barre dans Cet ordinateur → Réglages du navigateur",
+  "Another Argus: in it, Settings → Computers → Connect a computer… — open the link it gives here. Each keeps its own switches.": "Un autre Argus : dans celui-ci, Réglages → Ordinateurs → Connecter un ordinateur… — ouvrez ici le lien qu’il donne. Chacun garde ses interrupteurs.",
+  "Connected to {n} Argus: each lends what its switches say.": "Connecté à {n} Argus : chacun reçoit ce que disent ses interrupteurs.",
+  "Open which Argus?": "Ouvrir quel Argus ?",
+  "This computer stops lending anything to it. To connect it again, make a new link in that Argus.": "Cet ordinateur cesse de lui prêter quoi que ce soit. Pour le reconnecter, créez un nouveau lien dans cet Argus.",
 };
 export const CATALOGUES = { it: IT, es: ES, fr: FR };
 const ALL = CATALOGUES;

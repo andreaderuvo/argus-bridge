@@ -8,9 +8,15 @@ let state = {
   computer: 'lap684',
   version: '0.1.1',
   update: q.has('update') ? '0.1.2' : null,
-  machine: q.has('machine') ? { host: 'lab-server', name: 'lap684', offers: { browser: true, terminal: true, actions: false }, on: true, state: 'connected', message: '',
-    logins: { enabled: q.has('logins'), keep: q.has('keychain') ? 'keychain' : 'file', never_ask: false, onepassword: false, onepassword_installed: false, accounts: q.has('logins') ? [{ site: 'login.example.com', username: 'sam@example.com', source: 'vault', has_otp: true }] : [], always: [] },
-    browser: { hide_automation: true, exe: '', flags: '' }, browsers: ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser'] } : null,
+  // Each Argus this computer is connected to (`?machine`: one, `?two`: a second VM too).
+  machines: [
+    ...(q.has('machine') || q.has('two') ? [{ id: '1', url: 'http://lab-server:8090', host: 'lab-server', name: 'lap684', offers: { browser: true, terminal: true, actions: false }, on: true, state: 'connected', message: '' }] : []),
+    ...(q.has('two') ? [{ id: '2', url: 'https://vm-two.example:8090', host: 'vm-two.example', name: 'lap684', offers: { browser: false, terminal: true, actions: true }, on: true, state: 'lost', message: 'connection to vm-two.example: refused' }] : []),
+  ],
+  logins: { enabled: q.has('logins'), keep: q.has('keychain') ? 'keychain' : 'file', never_ask: false, onepassword: false, onepassword_installed: false, accounts: q.has('logins') ? [{ site: 'login.example.com', username: 'sam@example.com', source: 'vault', has_otp: true }] : [], always: [] },
+  browser: { hide_automation: true, exe: '', flags: '' },
+  browsers: ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser'],
+  agent_busy: false,
   full_disk: q.has('nofulldisk') ? false : null,
   auto_update: false,
   language: '',
@@ -42,6 +48,9 @@ let state = {
     },
   ],
 };
+const lends = () => { state.lends_browser = state.machines.some((m) => m.on && m.offers.browser); };
+lends();
+const machine = (id) => state.machines.find((m) => m.id === id);
 const emit = (name, payload) => (listeners[name] || []).forEach((f) => f({ payload }));
 const find = (id) => state.pairs.find((p) => p.id === id);
 window.__TAURI__ = {
@@ -68,25 +77,26 @@ window.__TAURI__ = {
         case 'move_local': find(args.id).local = args.to; break;
         case 'plugin:dialog|open': return '/Users/sam/Desktop/chosen';
         case 'machine_link':
-          state.machine = { host: 'lab-server', name: 'lap684', offers: { browser: args.browser, terminal: args.terminal, actions: args.actions }, on: true, state: 'connecting', message: '' };
+          state.machines = [...state.machines.filter((m) => m.url !== 'http://lab-server:8090'), { id: String(state.machines.length + 1), url: 'http://lab-server:8090', host: 'lab-server', name: 'lap684', offers: { browser: args.browser, terminal: args.terminal, actions: args.actions }, on: true, state: 'connecting', message: '' }];
           break;
         case 'set_auto_update': state.auto_update = args.on; break;
         case 'check_updates': break;
-        case 'machine_browser': state.machine = { ...state.machine, browser: { hide_automation: args.hideAutomation, exe: args.exe, flags: args.flags } }; break;
-        case 'logins_set': state.machine = { ...state.machine, logins: { ...state.machine.logins, enabled: args.enabled, onepassword: args.onepassword, ...(args.neverAsk === undefined ? {} : { never_ask: args.neverAsk }) } }; break;
-        case 'login_add': state.machine.logins.accounts = [...state.machine.logins.accounts, { site: args.site, username: args.username, source: 'vault', has_otp: !!args.otp, code: args.code || '' }]; break;
+        case 'machine_browser': state.browser = { hide_automation: args.hideAutomation, exe: args.exe, flags: args.flags }; break;
+        case 'logins_set': state.logins = { ...state.logins, enabled: args.enabled, onepassword: args.onepassword, ...(args.neverAsk === undefined ? {} : { never_ask: args.neverAsk }) }; break;
+        case 'login_add': state.logins.accounts = [...state.logins.accounts, { site: args.site, username: args.username, source: 'vault', has_otp: !!args.otp, code: args.code || '' }]; break;
         case 'set_agent_bar': state.agent_bar = args.on; break;
-        case 'stop_agents': state.machine = { ...state.machine, agent_busy: false, offers: { ...state.machine.offers, browser: false } }; break;
-        case 'logins_keep': state.machine.logins.keep = args.to; setTimeout(() => emit('snapshot', structuredClone(state))); return state.machine.logins.accounts.length;
-        case 'login_edit': state.machine.logins.accounts = state.machine.logins.accounts.map((a) => (a.site === args.site && a.username === args.username ? { ...a, site: args.newSite, code: args.code } : a)); break;
-        case 'login_remove': state.machine.logins.accounts = state.machine.logins.accounts.filter((a) => !(a.site === args.site && a.username === args.username)); break;
+        case 'stop_agents': state.agent_busy = false; state.machines = state.machines.map((m) => ({ ...m, offers: { ...m.offers, browser: false } })); break;
+        case 'logins_keep': state.logins.keep = args.to; setTimeout(() => emit('snapshot', structuredClone(state))); return state.logins.accounts.length;
+        case 'login_edit': state.logins.accounts = state.logins.accounts.map((a) => (a.site === args.site && a.username === args.username ? { ...a, site: args.newSite, code: args.code } : a)); break;
+        case 'login_remove': state.logins.accounts = state.logins.accounts.filter((a) => !(a.site === args.site && a.username === args.username)); break;
         case 'set_language': state.language = args.lang; break;
-        case 'machine_set': state.machine = { ...state.machine, offers: { browser: args.browser, terminal: args.terminal, actions: args.actions }, on: args.on, state: args.on ? 'connected' : 'off' }; break;
-        case 'machine_forget': state.machine = null; break;
+        case 'machine_set': Object.assign(machine(args.id), { offers: { browser: args.browser, terminal: args.terminal, actions: args.actions }, on: args.on, state: args.on ? 'connected' : 'off' }); break;
+        case 'machine_forget': state.machines = state.machines.filter((m) => m.id !== args.id); break;
         case 'open_argus': return null;
         case 'update_now': state.update = null; state.version = '0.1.2'; break;
         default: break;
       }
+      lends();
       setTimeout(() => emit('snapshot', structuredClone(state)));
       return null;
     },

@@ -44,6 +44,11 @@ In Argus: Settings → Computers → *Connect a computer…* gives an `argus-bri
 open it here. From a terminal: `argus-bridge computer '<link>' --browser --terminal --actions`.
 Disconnecting in Argus closes everything this computer lent.
 
+**Several Argus at once** (two VMs, each its own server): open each one's link here and each gets a card of
+its own, with its own switches, connection and *Open Argus* window. They share the one lent browser (each
+agent works in its own tab) and the logins. Kept in `computers.json` in the app's folder; the single
+`computer.json` of 0.1.29 and before is taken in by itself.
+
 - A question for you (*Do it / No*) arrives as a notification of the system, answered on it (macOS).
 - With Terminal or Actions on and no **Full Disk Access**, macOS stops an agent's command at each
   protected folder to ask "Allow?": the *This computer* card says so and opens the setting.

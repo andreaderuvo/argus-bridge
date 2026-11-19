@@ -194,31 +194,37 @@ fn run(dir: &PathBuf, once: bool) -> Res {
 
 /// Connect this computer to an Argus server: what it lends is what the switches say.
 fn computer(dir: &PathBuf, args: &[String]) -> Res {
-    use argus_sync_core::computer::{self, Ended, Offers, Setup};
+    use argus_sync_core::computer::{self, Ended, Links, Offers, Setup};
     let flag = |f: &str| args.iter().any(|a| a == f);
     let chrome_at = args.iter().position(|a| a == "--chrome").and_then(|i| args.get(i + 1)).map(PathBuf::from);
     let link = args.iter().enumerate().find(|(i, a)| !a.starts_with("--") && args.get(i.wrapping_sub(1)).map(String::as_str) != Some("--chrome")).map(|(_, a)| a);
+    let mut links = Links::load(dir);
     if flag("--forget") {
-        Setup::forget(dir).map_err(|e| e.to_string())?;
+        links.links.clear();
+        links.save(dir).map_err(|e| e.to_string())?;
         println!("forgotten here (in Argus, Settings → Computers → Forget takes its key back)");
         return Ok(());
     }
-    let mut setup = match link {
+    // A link given is added beside the others (the same Argus again replaces its own); none given: the first.
+    let id = match link {
         Some(text) => {
             let invite = computer::parse_link(text).ok_or("that is not a link from Argus to connect a computer (argus-bridge://computer?url=…&key=ac_…)")?;
-            Setup { url: invite.url, key: invite.key, name: if invite.name.is_empty() { argus_sync_core::engine::host_name() } else { invite.name },
-                    offers: Offers::default(), on: true, browser: Default::default() }
+            links.add(Setup { id: String::new(), url: invite.url, key: invite.key,
+                              name: if invite.name.is_empty() { argus_sync_core::engine::host_name() } else { invite.name },
+                              offers: Offers::default(), on: true, browser: Default::default() })
         }
-        None => Setup::load(dir).ok_or("not connected yet — in Argus: Settings → Computers → Connect this computer")?,
+        None => links.links.first().map(|l| l.id.clone()).ok_or("not connected yet — in Argus: Settings → Computers → Connect this computer")?,
     };
+    let setup = links.get_mut(&id).ok_or("not connected yet")?;
     // The switches: given on the command line, they are what this computer lends from now on.
     if flag("--browser") || flag("--terminal") || flag("--actions") || flag("--nothing") {
         setup.offers = Offers { browser: flag("--browser"), terminal: flag("--terminal"), actions: flag("--actions") };
     }
-    setup.save(dir).map_err(|e| e.to_string())?;
+    let setup = setup.clone();
+    links.save(dir).map_err(|e| e.to_string())?;
     let browser = if setup.offers.browser {
-        let exe = chrome_at.or_else(|| setup.browser.exe()).ok_or("no Chrome found here (say where: --chrome <path>, or leave out --browser)")?;
-        let mut extra: Vec<String> = setup.browser.args();
+        let exe = chrome_at.or_else(|| links.browser.exe()).ok_or("no Chrome found here (say where: --chrome <path>, or leave out --browser)")?;
+        let mut extra: Vec<String> = links.browser.args();
         if flag("--headless") {
             extra.extend(["--headless=new".into(), "--no-sandbox".into(), "--disable-gpu".into()]);
         }

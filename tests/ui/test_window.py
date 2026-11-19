@@ -329,7 +329,7 @@ def test_an_agent_using_the_browser_is_said_and_stopped_from_the_window(make_pag
     to(page, "computer")
     page.wait("!!document.querySelector('.switch, .row')", what="the page")
     assert not page.eval("!!document.getElementById('stopagents')"), "nothing said while no agent is at work"
-    page.eval("window.__mock.state.machine.agent_busy = true; window.__mock.emit('snapshot', structuredClone(window.__mock.state))")
+    page.eval("window.__mock.state.agent_busy = true; window.__mock.emit('snapshot', structuredClone(window.__mock.state))")
     page.wait("!!document.getElementById('stopagents')", what="the agent, said")
     page.click("#stopagents")
     page.wait("window.__mock.calls.some(c => c[0] === 'stop_agents')", what="asked of the app")
@@ -344,3 +344,27 @@ def test_the_agent_bar_can_be_switched_off(make_page):
     assert page.eval("document.getElementById('agentbar').checked") is True, "on by default"
     page.click("label:has(#agentbar)")
     page.wait("window.__mock.calls.some(c => c[0] === 'set_agent_bar' && c[1].on === false)", what="switched off")
+
+
+def test_two_argus_each_with_its_switches(make_page):
+    """"I must be able to manage several Argus" (2026-11-19): two VMs, a card each, each switch said to its own
+    link; Open Argus asks which one."""
+    page = make_page("?two")
+    to(page, "computer")
+    cards = "document.querySelectorAll('.group.machine')"
+    page.wait(f"{cards}.length === 2", what="a card per Argus")
+    assert "2 Argus" in page.eval("document.querySelector('.pagehead').textContent")
+    second = "document.querySelector('.group.machine[data-link=\"2\"]')"
+    assert "vm-two.example" in page.eval(f"{second}.textContent") and "refused" in page.eval(f"{second}.textContent")
+    page.click(".group.machine[data-link=\"2\"] .switch[data-offer=\"browser\"] .toggle")
+    page.wait("window.__mock.calls.some(c => c[0] === 'machine_set' && c[1].id === '2' && c[1].browser === true && c[1].terminal === true)",
+              what="the second's browser on, its own switches kept")
+    assert not page.eval("window.__mock.calls.some(c => c[0] === 'machine_set' && c[1].id === '1')"), "the first untouched"
+    page.click("#argus")
+    page.wait("document.querySelectorAll('#sheet .pickrow').length === 2", what="which Argus to open")
+    page.click("#sheet .pickrow:nth-child(2)")
+    page.wait("window.__mock.calls.some(c => c[0] === 'open_argus' && c[1].id === '2')", what="that one opened")
+    page.click(".group.machine[data-link=\"1\"] .machinehead .danger")
+    page.click("#sheet .danger.solid")
+    page.wait(f"{cards}.length === 1", what="one forgotten, the other kept")
+    page.wait("window.__mock.calls.some(c => c[0] === 'machine_forget' && c[1].id === '1')")

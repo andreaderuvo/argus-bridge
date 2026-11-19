@@ -197,12 +197,14 @@ function navBadge(key) {
     if (conflicts) return el('span', { className: 'count warn', textContent: String(conflicts), title: t('Conflicts') });
     return snap.pairs.length ? el('span', { className: 'count', textContent: String(snap.pairs.length) }) : null;
   }
-  if (key === 'computer' && snap.machine) {
-    const [, tone] = MACHINE[snap.machine.state] || MACHINE.connecting;
+  if (key === 'computer' && snap.machines?.length) {
+    // The worst of them: one Argus unreachable is what the dot says.
+    const tones = snap.machines.map((m) => (MACHINE[m.state] || MACHINE.connecting)[1]);
+    const tone = ['bad', 'warn', 'busy', 'ok'].find((x) => tones.includes(x)) || '';
     return el('span', { className: `pip ${tone}` });
   }
   if (key === 'logins') {
-    const n = snap.machine?.logins?.accounts?.length || 0;
+    const n = snap.logins?.accounts?.length || 0;
     return n ? el('span', { className: 'count', textContent: String(n) }) : null;
   }
   if (key === 'settings' && snap.update) return el('span', { className: 'pip ok', title: t('argus-bridge {version} is ready', { version: snap.update }) });
@@ -220,7 +222,7 @@ function paint(now = false) {
     argus.replaceChildren(icon('external'), t('Open Argus'));
   }
   argus.title = t('Argus in a window of its own, with the notifications of this computer');
-  argus.hidden = !snap.machine && !snap.pairs.length;
+  argus.hidden = !snap.machines?.length && !snap.pairs.length;
   $('#version').textContent = snap.version ? `argus-bridge ${snap.version}` : '';
   $('#nav').replaceChildren(...PAGES().map(([key, glyph, word]) => {
     const b = el('button', { type: 'button', className: key === page ? 'on' : '', onclick: () => showPage(key) }, [icon(glyph), word, navBadge(key)]);
@@ -437,10 +439,11 @@ function switches(offers, onChange) {
 }
 
 function computerPage() {
-  const m = snap.machine;
-  if (!m) {
+  const all = snap.machines || [];
+  const lede = t('Lend Argus this computer’s browser for its agents, a terminal for you, and commands an agent asks to run here — each a switch, off until you turn it on.');
+  if (!all.length) {
     return [
-      pageHead(t('This computer'), t('Lend Argus this computer’s browser for its agents, a terminal for you, and commands an agent asks to run here — each a switch, off until you turn it on.')),
+      pageHead(t('This computer'), lede),
       el('section', { className: 'empty' }, [
         el('div', { className: 'mark' }, icon('screen')),
         el('h2', { textContent: t('Not connected to Argus') }),
@@ -448,14 +451,31 @@ function computerPage() {
       ]),
     ];
   }
+  const shared = { offers: { terminal: all.some((m) => m.on && m.offers.terminal), actions: all.some((m) => m.on && m.offers.actions) } };
+  return [
+    pageHead(t('This computer'), all.length > 1
+      ? t('Connected to {n} Argus: each lends what its switches say.', { n: all.length })
+      : t('Connected to Argus on {host}: what it lends, each one a switch.', { host: all[0].host })),
+    agentNote(),
+    fullDiskNote(shared),
+    ...all.map((m) => machineCard(m, all.length > 1)),
+    snap.lends_browser ? browserSettings() : null,
+    el('p', { className: 'hint another' }, [icon('plus'), t('Another Argus: in it, Settings → Computers → Connect a computer… — open the link it gives here. Each keeps its own switches.')]),
+  ];
+}
+
+/* One Argus this computer is connected to: its state, what it lends, Connect/Disconnect, Open, Forget. */
+function machineCard(m, several) {
   const [label, tone] = MACHINE[m.state] || MACHINE.connecting;
-  const set = (offers, on = m.on) => run('machine_set', { ...offers, on });
-  const toggleOn = el('button', { type: 'button', onclick: () => set(m.offers, !m.on) }, [icon(m.on ? 'pause' : 'play'), m.on ? t('Disconnect') : t('Connect')]);
-  const forget = el('button', { className: 'danger', type: 'button', onclick: () => sheet(
+  const set = (offers, on = m.on) => run('machine_set', { id: m.id, ...offers, on });
+  const toggleOn = el('button', { type: 'button', className: 'small', onclick: () => set(m.offers, !m.on) }, [icon(m.on ? 'pause' : 'play'), m.on ? t('Disconnect') : t('Connect')]);
+  const open = el('button', { type: 'button', className: 'small', title: t('Argus in a window of its own, with the notifications of this computer'),
+    onclick: () => run('open_argus', { id: m.id }) }, [icon('external'), t('Open')]);
+  const forget = el('button', { className: 'danger small', type: 'button', onclick: () => sheet(
     t('Forget the connection to {host}?', { host: m.host }),
-    [el('p', { textContent: t('This computer stops lending anything. To connect it again, make a new link in Argus.') })],
+    [el('p', { textContent: t('This computer stops lending anything to it. To connect it again, make a new link in that Argus.') })],
     [el('button', { type: 'button', textContent: t('Cancel'), onclick: shut }),
-      el('button', { className: 'danger solid', type: 'button', textContent: t('Forget'), onclick: async () => { await run('machine_forget'); shut(); } })]) },
+      el('button', { className: 'danger solid', type: 'button', textContent: t('Forget'), onclick: async () => { await run('machine_forget', { id: m.id }); shut(); } })]) },
   [icon('trash'), t('Forget…')]);
   const lends = SWITCHES().map(([key, glyph, word, hint]) => {
     const r = row({ glyph, title: word, hint, on: !!m.offers[key],
@@ -464,30 +484,26 @@ function computerPage() {
     r.dataset.offer = key;
     return r;
   });
-  return [
-    pageHead(t('This computer'), t('Connected to Argus on {host}: what it lends, each one a switch.', { host: m.host }), [toggleOn],
-      el('span', { className: `pill ${tone}`, textContent: t(label) })),
+  const card = el('section', { className: 'group machine' }, [
+    el('div', { className: 'machinehead' }, [
+      el('div', { className: 'who' }, [icon('link'), el('b', { textContent: several ? m.host : t('Argus on {host}', { host: m.host }) }),
+        el('span', { className: `pill ${tone}`, textContent: t(label) })]),
+      el('div', { className: 'acts' }, [open, toggleOn, forget]),
+    ]),
     m.message ? el('div', { className: 'callout' }, [icon('warn'), el('div', { className: 'body' }, [el('span', { textContent: explain(m.message) })])]) : null,
-    agentNote(m),
-    fullDiskNote(m),
-    el('section', { className: 'group machine' }, [
-      el('div', { className: 'groupcap', textContent: t('What it lends') }),
-      el('div', { className: 'panel switches' }, lends),
-    ]),
-    m.offers.browser ? browserSettings(m) : null,
-    group(t('Connection'), [
-      row({ glyph: 'link', title: t('Argus on {host}', { host: m.host }), hint: t('The connection is kept: the app connects again when it starts, and when the network comes back.'), control: forget }),
-    ]),
-  ];
+    el('div', { className: 'panel switches' }, lends),
+  ]);
+  card.dataset.link = m.id;
+  return card;
 }
 
 /* How the lent browser starts: the person's to decide ("can these be configured, so the user controls
  * the harness?", 2026-11-10). Hidden automation on by default — Google refuses to sign in a browser
  * that tells pages it is driven. Saved here, used from the browser's next start. */
-function browserSettings(m) {
-  const b = m.browser || { hide_automation: true, exe: '', flags: '' };
+function browserSettings() {
+  const b = snap.browser || { hide_automation: true, exe: '', flags: '' };
   const hide = el('input', { type: 'checkbox', checked: b.hide_automation !== false });
-  const found = m.browsers || [];
+  const found = snap.browsers || [];
   const pick = el('select', { id: 'browserexe' });
   pick.append(el('option', { value: '', textContent: t('The first one found') }));
   for (const path of found) pick.append(el('option', { value: path, textContent: path.split('/').filter((x) => x.endsWith('.app'))[0]?.replace(/\.app$/, '') || path }));
@@ -528,10 +544,9 @@ function browserSettings(m) {
  * password: argus-bridge types it into the page, on its own site only, each time asked here first
  * unless the site is "Always". Off until switched on. */
 function loginsPage() {
-  const m = snap.machine;
   const lede = t('Sign agents in with the logins you already keep. The agent never sees a password: argus-bridge types it into the page, on its own site only, after you allow it here.');
   const head = pageHead(t('Logins'), lede);
-  if (!m || !m.offers.browser) {
+  if (!snap.lends_browser) {
     return [head, el('section', { className: 'empty' }, [
       el('div', { className: 'mark' }, icon('key')),
       el('h2', { textContent: t('The browser is not lent') }),
@@ -539,7 +554,7 @@ function loginsPage() {
       el('button', { type: 'button', onclick: () => showPage('computer') }, [icon('screen'), t('This computer')]),
     ])];
   }
-  const l = m.logins || { enabled: false, accounts: [], always: [] };
+  const l = snap.logins || { enabled: false, accounts: [], always: [] };
   const save = (enabled, onepassword) => run('logins_set', { enabled, onepassword });
   const importBtn = el('button', { type: 'button' }, [icon('down'), t('Import an export (CSV)…')]);
   importBtn.onclick = async () => {
@@ -636,7 +651,7 @@ function addLoginSheet() {
       await invoke('login_add', { site: site.value, username: user.value, password: pass.value, otp: otp.value, code: code.value });
       pass.value = '';
       shut();
-      toast(snap.machine?.logins?.keep === 'file' ? t('Kept in argus-bridge’s sealed file') : t('Kept in the keychain'));
+      toast(snap.logins?.keep === 'file' ? t('Kept in argus-bridge’s sealed file') : t('Kept in the keychain'));
     } catch (e) { err.textContent = explain(e); err.hidden = false; }
   };
   sheet(t('A login for agents'), [
@@ -673,8 +688,8 @@ function editLoginSheet(a) {
 }
 
 /* An agent is using the lent browser now: said here too, with the same Stop as the bar over every window. */
-function agentNote(m) {
-  if (!m.agent_busy) return null;
+function agentNote() {
+  if (!snap.agent_busy) return null;
   const stop = el('button', { className: 'danger small', type: 'button', id: 'stopagents',
     title: t('Close every agent’s connection to the browser now, and lend it no more until you switch Browser on again') }, [icon('x'), t('Stop')]);
   stop.onclick = async () => { stop.disabled = true; try { await invoke('stop_agents'); } catch (e) { toast(explain(e)); stop.disabled = false; } };
@@ -845,7 +860,15 @@ async function moveIt(p) {
 
 // --------------------------------------------------------------------------------------- start
 
-$('#argus').onclick = () => run('open_argus');
+// Several Argus: which one, from a small menu; one: straight there.
+$('#argus').onclick = () => {
+  const all = snap.machines || [];
+  if (all.length < 2) return run('open_argus', { id: all[0]?.id ?? null });
+  sheet(t('Open which Argus?'), [el('div', { className: 'picklist' }, all.map((m) =>
+    el('button', { type: 'button', className: 'pickrow', onclick: () => { shut(); run('open_argus', { id: m.id }); } },
+      [icon('external'), el('span', { className: 'grow', textContent: m.host }), el('span', { className: `pill ${(MACHINE[m.state] || MACHINE.connecting)[1]}`, textContent: t((MACHINE[m.state] || MACHINE.connecting)[0]) })])))],
+  [el('button', { type: 'button', textContent: t('Cancel'), onclick: shut })]);
+};
 document.documentElement.lang = (navigator.language || 'en').slice(0, 2);
 // The same state again changes nothing on screen: not drawn.
 let lastSnap = '';

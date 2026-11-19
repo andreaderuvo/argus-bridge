@@ -71,6 +71,9 @@ pub struct Offers {
 /// This computer's connection, kept in `computer.json` (readable by you only).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Setup {
+    /// Which of the links (`Links`) this is; empty in the `computer.json` of before.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub id: String,
     pub url: String,
     pub key: String,
     pub name: String,
@@ -152,6 +155,95 @@ impl Setup {
             Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
             _ => Ok(()),
         }
+    }
+}
+
+/// Every Argus this computer is connected to ("I must be able to manage several Argus", 2026-11-19): two VMs,
+/// each its own server, each with its own switches. Kept in `computers.json` (readable by you only), with the
+/// one browser they all borrow and how it starts. The single `computer.json` of 0.1.29 and before is taken
+/// in at the first load, then removed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Links {
+    #[serde(default)]
+    pub links: Vec<Setup>,
+    /// How the lent browser starts: one browser, lent to every Argus that has Browser on.
+    #[serde(default)]
+    pub browser: BrowserSettings,
+}
+
+impl Links {
+    pub fn load(dir: &Path) -> Links {
+        if let Some(links) = fs::read_to_string(dir.join("computers.json")).ok().and_then(|t| serde_json::from_str::<Links>(&t).ok()) {
+            return links.numbered();
+        }
+        let Some(mut one) = Setup::load(dir) else { return Links::default() };
+        let browser = std::mem::take(&mut one.browser);
+        let links = Links { links: vec![one], browser }.numbered();
+        if links.save(dir).is_ok() {
+            let _ = Setup::forget(dir);
+        }
+        links
+    }
+
+    /// Every link with an id of its own: the app speaks of a link by it.
+    fn numbered(mut self) -> Links {
+        for i in 0..self.links.len() {
+            if self.links[i].id.is_empty() || self.links[..i].iter().any(|l| l.id == self.links[i].id) {
+                self.links[i].id = self.free_id();
+            }
+        }
+        self
+    }
+
+    fn free_id(&self) -> String {
+        (1..).map(|n: u32| n.to_string()).find(|id| !self.links.iter().any(|l| &l.id == id)).unwrap_or_default()
+    }
+
+    pub fn save(&self, dir: &Path) -> io::Result<()> {
+        fs::create_dir_all(dir)?;
+        let path = dir.join("computers.json");
+        let part = dir.join("computers.json.part");
+        fs::write(&part, serde_json::to_string_pretty(self).unwrap_or_default())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&part, fs::Permissions::from_mode(0o600))?;
+        }
+        fs::rename(&part, &path)
+    }
+
+    pub fn get(&self, id: &str) -> Option<&Setup> {
+        self.links.iter().find(|l| l.id == id)
+    }
+
+    pub fn get_mut(&mut self, id: &str) -> Option<&mut Setup> {
+        self.links.iter_mut().find(|l| l.id == id)
+    }
+
+    /// A link from Argus taken in: the same server linked again replaces its old link (a new key, the
+    /// switches chosen now) and keeps its id; another server is added. Returns the link's id.
+    pub fn add(&mut self, mut setup: Setup) -> String {
+        let same = |a: &str, b: &str| a.trim_end_matches('/') == b.trim_end_matches('/');
+        if let Some(old) = self.links.iter_mut().find(|l| same(&l.url, &setup.url)) {
+            setup.id = old.id.clone();
+            *old = setup;
+            return old.id.clone();
+        }
+        setup.id = self.free_id();
+        let id = setup.id.clone();
+        self.links.push(setup);
+        id
+    }
+
+    pub fn remove(&mut self, id: &str) -> bool {
+        let before = self.links.len();
+        self.links.retain(|l| l.id != id);
+        self.links.len() != before
+    }
+
+    /// Whether any Argus connected here borrows the browser.
+    pub fn lends_browser(&self) -> bool {
+        self.links.iter().any(|l| l.on && l.offers.browser)
     }
 }
 
@@ -1119,12 +1211,62 @@ mod tests {
     fn the_switches_start_off_and_are_kept() {
         let dir = tempfile::tempdir().unwrap();
         assert!(Setup::load(dir.path()).is_none());
-        let mut setup = Setup { url: "https://a".into(), key: "ac_k".into(), name: "Mac".into(), offers: Offers::default(), on: false, browser: Default::default() };
+        let mut setup = Setup { id: String::new(), url: "https://a".into(), key: "ac_k".into(), name: "Mac".into(), offers: Offers::default(), on: false, browser: Default::default() };
         assert_eq!(setup.offers, Offers { browser: false, terminal: false, actions: false });
         setup.offers.terminal = true;
         setup.save(dir.path()).unwrap();
         assert_eq!(Setup::load(dir.path()).unwrap(), setup);
         Setup::forget(dir.path()).unwrap();
         assert!(Setup::load(dir.path()).is_none());
+    }
+
+    fn link(url: &str) -> Setup {
+        Setup { id: String::new(), url: url.into(), key: "ac_k".into(), name: "Mac".into(), offers: Offers::default(), on: true, browser: Default::default() }
+    }
+
+    #[test]
+    fn several_argus_are_kept_each_with_its_switches() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut links = Links::load(dir.path());
+        assert!(links.links.is_empty());
+        let a = links.add(link("https://vm-one.example:8090"));
+        let mut two = link("https://vm-two.example:8090");
+        two.offers.terminal = true;
+        let b = links.add(two);
+        assert_ne!(a, b);
+        links.get_mut(&a).unwrap().offers.browser = true;
+        links.save(dir.path()).unwrap();
+        let back = Links::load(dir.path());
+        assert_eq!(back, links);
+        assert!(back.get(&a).unwrap().offers.browser && !back.get(&a).unwrap().offers.terminal);
+        assert!(back.get(&b).unwrap().offers.terminal && !back.get(&b).unwrap().offers.browser);
+        assert!(back.lends_browser());
+    }
+
+    #[test]
+    fn the_same_argus_linked_again_replaces_its_link() {
+        let mut links = Links::default();
+        let a = links.add(link("https://vm-one.example:8090"));
+        let mut again = link("https://vm-one.example:8090/");
+        again.key = "ac_new".into();
+        assert_eq!(links.add(again), a);
+        assert_eq!(links.links.len(), 1);
+        assert_eq!(links.get(&a).unwrap().key, "ac_new");
+        assert!(links.remove(&a) && links.links.is_empty());
+    }
+
+    #[test]
+    fn the_single_link_of_before_is_taken_in() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut old = link("https://vm-one.example:8090");
+        old.browser.flags = "--window-size=1400,900".into();
+        old.save(dir.path()).unwrap();
+        let links = Links::load(dir.path());
+        assert_eq!(links.links.len(), 1);
+        assert_eq!(links.links[0].url, "https://vm-one.example:8090");
+        assert!(!links.links[0].id.is_empty());
+        assert_eq!(links.browser.flags, "--window-size=1400,900", "its browser settings become everybody's");
+        assert!(!dir.path().join("computer.json").exists(), "taken in once");
+        assert_eq!(Links::load(dir.path()), links);
     }
 }
