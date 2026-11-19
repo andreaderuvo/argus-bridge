@@ -70,8 +70,11 @@ jobs:
       - name: The app's tests
         run: cargo test --manifest-path app/src-tauri/Cargo.toml --lib
 
+  # The installers start at once, beside the tests rather than after them: the tagged commit was already
+  # tested on its push to master, and waiting for a macOS runner for the engine's tests first cost 10-25
+  # minutes a release (2026-11-19). A failing test still fails the run, and a release is made latest only
+  # when the whole run is green.
   app:
-    needs: [engine, app-check]
     if: startsWith(github.ref, 'refs/tags/')
     strategy:
       fail-fast: false
