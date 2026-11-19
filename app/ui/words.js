@@ -221,6 +221,10 @@ const IT = {
   "Close every agent’s connection to the browser now, and lend it no more until you switch Browser on again": "Chiude subito ogni collegamento degli agenti al browser, e non lo presta più finché non riaccendi Browser",
   "An agent is using your browser — Stop it here": "Un agente sta usando il tuo browser — fermalo da qui",
   "Agents stopped: the browser is no longer lent. Switch Browser on to lend it again.": "Agenti fermati: il browser non è più prestato. Riaccendi Browser per prestarlo di nuovo.",
+  "A bar over the screen while an agent uses it": "Una barra sullo schermo mentre un agente lo usa",
+  "with Stop; off: the menu-bar icon and this page still say so": "con Ferma; spenta: l’icona nella barra dei menu e questa pagina lo dicono comunque",
+  "Hide": "Nascondi",
+  "Hide until the agent stops — switch the bar off in This computer → Browser settings": "Nascondi finché l’agente non smette — spegni la barra in Questo computer → Impostazioni del browser",
 };
 const ES = {
   'Open Argus': 'Abrir Argus',
@@ -405,6 +409,10 @@ const ES = {
   "Close every agent’s connection to the browser now, and lend it no more until you switch Browser on again": "Cierra ya cada conexión de los agentes al navegador, y no lo presta más hasta que vuelvas a activar Navegador",
   "An agent is using your browser — Stop it here": "Un agente está usando tu navegador — detenlo aquí",
   "Agents stopped: the browser is no longer lent. Switch Browser on to lend it again.": "Agentes detenidos: el navegador ya no se presta. Activa Navegador para prestarlo de nuevo.",
+  "A bar over the screen while an agent uses it": "Una barra sobre la pantalla mientras un agente lo usa",
+  "with Stop; off: the menu-bar icon and this page still say so": "con Detener; apagada: el icono de la barra de menús y esta página lo siguen diciendo",
+  "Hide": "Ocultar",
+  "Hide until the agent stops — switch the bar off in This computer → Browser settings": "Ocultar hasta que el agente pare — apaga la barra en Este ordenador → Ajustes del navegador",
 };
 const FR = {
   'Open Argus': 'Ouvrir Argus',
@@ -589,6 +597,10 @@ const FR = {
   "Close every agent’s connection to the browser now, and lend it no more until you switch Browser on again": "Ferme tout de suite chaque connexion des agents au navigateur, et ne le prête plus avant que vous réactiviez Navigateur",
   "An agent is using your browser — Stop it here": "Un agent utilise votre navigateur — arrêtez-le ici",
   "Agents stopped: the browser is no longer lent. Switch Browser on to lend it again.": "Agents arrêtés : le navigateur n’est plus prêté. Réactivez Navigateur pour le prêter à nouveau.",
+  "A bar over the screen while an agent uses it": "Une barre sur l’écran pendant qu’un agent l’utilise",
+  "with Stop; off: the menu-bar icon and this page still say so": "avec Arrêter ; désactivée : l’icône de la barre des menus et cette page le disent quand même",
+  "Hide": "Masquer",
+  "Hide until the agent stops — switch the bar off in This computer → Browser settings": "Masquer jusqu’à ce que l’agent s’arrête — désactivez la barre dans Cet ordinateur → Réglages du navigateur",
 };
 export const CATALOGUES = { it: IT, es: ES, fr: FR };
 const ALL = CATALOGUES;

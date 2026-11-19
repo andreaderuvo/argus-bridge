@@ -83,6 +83,8 @@ struct Snapshot {
     full_disk: Option<bool>,
     /// Newer versions installed by themselves (true) or asked first (false).
     auto_update: bool,
+    /// The bar over the screen while an agent uses the browser: shown, or switched off.
+    agent_bar: bool,
     language: String,
 }
 
@@ -162,6 +164,8 @@ struct Shared {
     /// The browser lent now, watched for agents using it; and whether one is (the floating bar).
     lent: Mutex<Option<Arc<argus_sync_core::computer::Browser>>>,
     agent_busy: Mutex<bool>,
+    /// The bar's ✕: hidden until the agent stops using the browser, back the next time one starts.
+    pill_hidden: Mutex<bool>,
 }
 
 /// How newer versions arrive: asked first (the default), or installed by themselves. A version you said
@@ -175,6 +179,10 @@ struct UpdatePrefs {
     /// The window's and the menu's language: "" follows the system's.
     #[serde(default)]
     language: String,
+    /// No bar over the screen while an agent uses the lent browser ("it is annoying", 2026-11-19): the menu-bar
+    /// icon and This computer still say so.
+    #[serde(default)]
+    no_agent_bar: bool,
 }
 
 impl UpdatePrefs {
@@ -217,6 +225,7 @@ fn snapshot(shared: &Shared) -> Snapshot {
         update: shared.update.lock().unwrap().clone(),
         full_disk: full_disk_access(),
         auto_update: prefs.auto,
+        agent_bar: !prefs.no_agent_bar,
         language: prefs.language,
         machine: argus_sync_core::computer::Setup::load(&shared.dir).map(|setup| {
             let m = shared.machine.lock().unwrap();
@@ -751,8 +760,12 @@ fn watch_agents(app: AppHandle, shared: Arc<Shared>) {
             changed
         };
         if changed {
+            if !busy {
+                *shared.pill_hidden.lock().unwrap() = false;      // hidden for this stretch only
+            }
+            let shown = busy && !shared.updates.lock().unwrap().no_agent_bar && !*shared.pill_hidden.lock().unwrap();
             let on_main = app.clone();
-            let _ = app.run_on_main_thread(move || show_pill(&on_main, busy));
+            let _ = app.run_on_main_thread(move || show_pill(&on_main, shown));
             publish(&app, &shared);
         }
     });
@@ -790,6 +803,25 @@ fn show_pill(app: &AppHandle, busy: bool) {
         let _ = w.set_position(tauri::LogicalPosition::new((width - 380.0) / 2.0, 34.0));
     }
     let _ = w.show();
+}
+
+/// The bar's ✕: out of the way until the agent stops using the browser.
+#[tauri::command]
+fn hide_agent_pill(app: AppHandle, shared: tauri::State<Arc<Shared>>) {
+    *shared.pill_hidden.lock().unwrap() = true;
+    show_pill(&app, false);
+}
+
+/// The bar shown, or never: This computer → Browser settings.
+#[tauri::command]
+fn set_agent_bar(app: AppHandle, shared: tauri::State<Arc<Shared>>, on: bool) {
+    let mut prefs = shared.updates.lock().unwrap();
+    prefs.no_agent_bar = !on;
+    prefs.save(&shared.dir);
+    drop(prefs);
+    let busy = *shared.agent_busy.lock().unwrap();
+    show_pill(&app, on && busy && !*shared.pill_hidden.lock().unwrap());
+    publish(&app, &shared);
 }
 
 /// Stop pressed: every agent's connection to the browser closed now, and Browser switched off here, so none
@@ -1265,6 +1297,7 @@ pub fn run() {
         updates: Mutex::new(UpdatePrefs::load(&pair::config_dir())),
         lent: Mutex::new(None),
         agent_busy: Mutex::new(false),
+        pill_hidden: Mutex::new(false),
     });
     let for_instance = shared.clone();
     tauri::Builder::default()
@@ -1283,7 +1316,7 @@ pub fn run() {
         .manage(shared.clone())
         .invoke_handler(tauri::generate_handler![
             get_snapshot, take_invite, inspect, connect, set_paused, pause_all, set_big, fetch, sync_now,
-            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget, update_now, open_argus, open_full_disk_settings, check_updates, set_auto_update, set_language, machine_browser, logins_set, stop_agents, logins_keep, login_add, login_edit, login_remove, login_forget_always, logins_import
+            disconnect, move_local, resolve, open_in, machine_link, machine_set, machine_forget, update_now, open_argus, open_full_disk_settings, check_updates, set_auto_update, set_language, machine_browser, logins_set, stop_agents, hide_agent_pill, set_agent_bar, logins_keep, login_add, login_edit, login_remove, login_forget_always, logins_import
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -1399,9 +1432,10 @@ mod tests {
             wake: Mutex::new(None),
             machine: Mutex::new(Machine::default()),
             update: Mutex::new(Some("9.9.9".into())),
-            updates: Mutex::new(UpdatePrefs { auto: true, later: None, language: "it".into() }),
+            updates: Mutex::new(UpdatePrefs { auto: true, later: None, language: "it".into(), no_agent_bar: false }),
             lent: Mutex::new(None),
             agent_busy: Mutex::new(false),
+            pill_hidden: Mutex::new(false),
         });
         let (tx, rx) = mpsc::channel();
         let sh = shared.clone();

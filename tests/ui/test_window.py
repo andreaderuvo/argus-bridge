@@ -334,3 +334,13 @@ def test_an_agent_using_the_browser_is_said_and_stopped_from_the_window(make_pag
     page.click("#stopagents")
     page.wait("window.__mock.calls.some(c => c[0] === 'stop_agents')", what="asked of the app")
     page.wait("!document.getElementById('stopagents')", what="and gone once stopped")
+
+
+def test_the_agent_bar_can_be_switched_off(make_page):
+    """"The popup 'an agent is using your browser' cannot be hidden — it is annoying" (2026-11-19)."""
+    page = make_page("?machine")
+    to(page, "computer")
+    page.wait("!!document.getElementById('agentbar')", what="the switch for the bar")
+    assert page.eval("document.getElementById('agentbar').checked") is True, "on by default"
+    page.click("label:has(#agentbar)")
+    page.wait("window.__mock.calls.some(c => c[0] === 'set_agent_bar' && c[1].on === false)", what="switched off")

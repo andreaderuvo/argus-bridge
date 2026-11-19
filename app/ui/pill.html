@@ -16,6 +16,8 @@
   button { -webkit-app-region: no-drag; font: inherit; font-weight: 600; color: #12161d; background: #f0a3a3; border: 0;
     border-radius: 7px; padding: 6px 12px; cursor: pointer; }
   button:hover { background: #ffb8b8; }
+  button.hide { background: none; color: #9aa3b2; font-size: 18px; font-weight: 400; padding: 2px 8px; }
+  button.hide:hover { background: #ffffff14; color: #e8ebf1; }
   button:focus-visible { outline: 2px solid #e8ebf1; outline-offset: 2px; }
 </style>
 </head>
@@ -24,6 +26,7 @@
   <span class="dot" aria-hidden="true"></span>
   <span class="what" id="what"></span>
   <button type="button" id="stop"></button>
+  <button type="button" id="hide" class="hide" aria-label="Hide">×</button>
 </div>
 <script type="module">
   import { t } from './words.js';
@@ -31,6 +34,10 @@
   const stop = document.getElementById('stop');
   stop.textContent = t('Stop');
   stop.title = t('Close every agent’s connection to the browser now, and lend it no more until you switch Browser on again');
+  const hide = document.getElementById('hide');
+  hide.title = t('Hide until the agent stops — switch the bar off in This computer → Browser settings');
+  hide.setAttribute('aria-label', t('Hide'));
+  hide.onclick = () => window.__TAURI__.core.invoke('hide_agent_pill');
   stop.onclick = async () => {
     stop.disabled = true;
     try { await window.__TAURI__.core.invoke('stop_agents'); } catch { stop.disabled = false; }

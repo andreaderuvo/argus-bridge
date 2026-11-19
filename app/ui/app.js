@@ -511,9 +511,14 @@ function browserSettings(m) {
     el('div', { className: 'label' }, [el('b', { textContent: t('More switches for it') }), el('span', { className: 'hint', textContent: t('Used from the browser’s next start.') })]),
     el('div', { className: 'control' }, [flags, save]),
   ]);
+  // The bar over the screen while an agent uses this browser: on by default, off for whoever finds it in the way
+  // ("it is annoying", 2026-11-19) — the menu-bar icon and this page still say so, with Stop.
+  const barRow = row({ glyph: 'screen', title: t('A bar over the screen while an agent uses it'),
+    hint: t('with Stop; off: the menu-bar icon and this page still say so'),
+    control: toggle(snap.agent_bar !== false, (on) => run('set_agent_bar', { on }), { id: 'agentbar' }) });
   const panel = el('section', { className: 'group browserset' }, [
     el('div', { className: 'groupcap', textContent: t('Browser settings') }),
-    el('div', { className: 'panel' }, [hideRow, exeRow, otherRow, flagsRow]),
+    el('div', { className: 'panel' }, [hideRow, barRow, exeRow, otherRow, flagsRow]),
   ]);
   return panel;
 }
