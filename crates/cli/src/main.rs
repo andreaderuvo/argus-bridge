@@ -200,7 +200,9 @@ fn computer(dir: &PathBuf, args: &[String]) -> Res {
     let link = args.iter().enumerate().find(|(i, a)| !a.starts_with("--") && args.get(i.wrapping_sub(1)).map(String::as_str) != Some("--chrome")).map(|(_, a)| a);
     let mut links = Links::load(dir);
     if flag("--forget") {
-        links.links.clear();
+        for id in links.links.iter().map(|l| l.id.clone()).collect::<Vec<_>>() {
+            links.remove(&id);
+        }
         links.save(dir).map_err(|e| e.to_string())?;
         println!("forgotten here (in Argus, Settings → Computers → Forget takes its key back)");
         return Ok(());
@@ -209,7 +211,7 @@ fn computer(dir: &PathBuf, args: &[String]) -> Res {
     let id = match link {
         Some(text) => {
             let invite = computer::parse_link(text).ok_or("that is not a link from Argus to connect a computer (argus-bridge://computer?url=…&key=ac_…)")?;
-            links.add(Setup { id: String::new(), url: invite.url, key: invite.key,
+            links.add(Setup { id: String::new(), url: invite.url, key: invite.key, kept: String::new(),
                               name: if invite.name.is_empty() { argus_sync_core::engine::host_name() } else { invite.name },
                               offers: Offers::default(), on: true, browser: Default::default() })
         }

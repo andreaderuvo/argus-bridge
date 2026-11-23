@@ -668,6 +668,10 @@ fn start_machines(app: &AppHandle, shared: &Arc<Shared>, renew: bool) {
         }
     }
     let links = argus_sync_core::computer::Links::load(&shared.dir);
+    // A key still in the file (linked before 0.1.32, or by the command line): into the keychain now.
+    if links.keys_in_file() {
+        let _ = links.save(&shared.dir);
+    }
     lent_browser(shared, &links, renew);
     for link in &links.links {
         start_link(app, shared, &link.id);
@@ -903,7 +907,7 @@ fn machine_link(app: AppHandle, shared: tauri::State<Arc<Shared>>, link: String,
     let invite = computer::parse_link(&link).ok_or_else(|| say("That is not a link from Argus to connect a computer", &[]))?;
     let mut links = Links::load(&shared.dir);
     let id = links.add(Setup {
-        id: String::new(), url: invite.url, key: invite.key, name: if invite.name.is_empty() { host_name() } else { invite.name },
+        id: String::new(), url: invite.url, key: invite.key, kept: String::new(), name: if invite.name.is_empty() { host_name() } else { invite.name },
         offers: Offers { browser, terminal, actions }, on: true, browser: Default::default(),
     });
     links.save(&shared.dir).map_err(|e| e.to_string())?;

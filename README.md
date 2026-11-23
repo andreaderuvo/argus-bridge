@@ -53,6 +53,10 @@ agent works in its own tab) and the logins. Kept in `computers.json` in the app'
 key of its own (`<computer> (argus-bridge)`, listed in Argus's devices), with the computer's key. It is never
 written on this computer, each new one revokes the last, and forgetting the computer in Argus (or switching it
 off there, in Settings → Computers) revokes it. An older Argus, or the switch off: the window asks for the token.
+Only the computer itself gets it: Argus gives it to a request from the address of the computer's own live
+connection, and says so when that connection is taken over from somewhere else. The computer's key is kept in the
+system's keychain (macOS Keychain, Windows Credential Manager, the Secret Service on Linux), `computers.json` holding
+no secret; macOS may ask once after an update — *Always Allow*. A system with no keychain keeps it in the file (0600).
 
 - A question for you (*Do it / No*) arrives as a notification of the system, answered on it (macOS).
 - With Terminal or Actions on and no **Full Disk Access**, macOS stops an agent's command at each

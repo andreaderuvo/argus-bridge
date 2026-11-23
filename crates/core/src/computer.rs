@@ -75,7 +75,12 @@ pub struct Setup {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub id: String,
     pub url: String,
+    /// Empty once the key is in the system's keychain (`kept`): read from there only when connecting.
+    #[serde(default)]
     pub key: String,
+    /// "keychain" when the key is kept there; empty when it is in this file (no keychain on this system).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub kept: String,
     pub name: String,
     #[serde(default)]
     pub offers: Offers,
@@ -134,6 +139,26 @@ impl BrowserSettings {
 }
 
 impl Setup {
+    /// The keychain entry of this link's key: one per Argus.
+    fn key_name(&self) -> String {
+        format!("computer-key:{}", self.url.trim_end_matches('/'))
+    }
+
+    /// The computer's key: from the keychain when it is kept there (macOS may ask once after an update).
+    pub fn secret(&self) -> Result<String, String> {
+        self.secret_in(&crate::logins::Keychain)
+    }
+
+    pub fn secret_in(&self, store: &dyn crate::logins::Store) -> Result<String, String> {
+        if !self.key.is_empty() {
+            return Ok(self.key.clone());
+        }
+        if self.kept == "keychain" {
+            return store.get(&self.key_name()).map_err(|e| format!("this computer's key is not in the keychain ({e}): connect it again with a new link"));
+        }
+        Err("this computer has no key: connect it again with a new link".into())
+    }
+
     pub fn load(dir: &Path) -> Option<Setup> {
         fs::read_to_string(dir.join("computer.json")).ok().and_then(|t| serde_json::from_str(&t).ok())
     }
@@ -179,7 +204,9 @@ impl Links {
         let Some(mut one) = Setup::load(dir) else { return Links::default() };
         let browser = std::mem::take(&mut one.browser);
         let links = Links { links: vec![one], browser }.numbered();
-        if links.save(dir).is_ok() {
+        // Written as it was (no keychain here: this runs at every drawing of the window); the key moves into the
+        // keychain at the app's next start of its connections (`keys_in_file`).
+        if links.write(dir).is_ok() {
             let _ = Setup::forget(dir);
         }
         links
@@ -199,7 +226,29 @@ impl Links {
         (1..).map(|n: u32| n.to_string()).find(|id| !self.links.iter().any(|l| &l.id == id)).unwrap_or_default()
     }
 
+    /// Kept: every key moved into the system's keychain first ("security first", 2026-11-23) — the file then holds
+    /// no secret at all. A system without a keychain (a Linux with no Secret Service) keeps it in the file, 0600.
     pub fn save(&self, dir: &Path) -> io::Result<()> {
+        self.save_in(dir, &crate::logins::Keychain)
+    }
+
+    pub fn save_in(&self, dir: &Path, store: &dyn crate::logins::Store) -> io::Result<()> {
+        let mut out = self.clone();
+        for l in &mut out.links {
+            if !l.key.is_empty() && store.set(&l.key_name(), &l.key).is_ok() {
+                l.key.clear();
+                l.kept = "keychain".into();
+            }
+        }
+        out.write(dir)
+    }
+
+    /// Whether a key still lies in the file (from before, or no keychain then): moved at the next save.
+    pub fn keys_in_file(&self) -> bool {
+        self.links.iter().any(|l| !l.key.is_empty())
+    }
+
+    fn write(&self, dir: &Path) -> io::Result<()> {
         fs::create_dir_all(dir)?;
         let path = dir.join("computers.json");
         let part = dir.join("computers.json.part");
@@ -235,8 +284,16 @@ impl Links {
         id
     }
 
+    /// Forgotten here: its key taken out of the keychain too.
     pub fn remove(&mut self, id: &str) -> bool {
+        self.remove_in(id, &crate::logins::Keychain)
+    }
+
+    pub fn remove_in(&mut self, id: &str, store: &dyn crate::logins::Store) -> bool {
         let before = self.links.len();
+        for l in self.links.iter().filter(|l| l.id == id && l.kept == "keychain") {
+            let _ = store.delete(&l.key_name());
+        }
         self.links.retain(|l| l.id != id);
         self.links.len() != before
     }
@@ -259,7 +316,7 @@ pub fn window_key(setup: &Setup) -> Result<String, String> {
         .build();
     let said: Value = agent
         .post(&format!("{}/api/computers/window-key", setup.url.trim_end_matches('/')))
-        .set("authorization", &format!("Bearer {}", setup.key))
+        .set("authorization", &format!("Bearer {}", setup.secret()?))
         .send_json(json!({}))
         .map_err(|e| e.to_string())?
         .into_json()
@@ -668,7 +725,11 @@ pub fn bridge(setup: &Setup, browser: Option<&Arc<Browser>>, logins: Option<&cra
         Ok(r) => r,
         Err(e) => return Ended::Lost(e.to_string()),
     };
-    request.headers_mut().insert("authorization", format!("Bearer {}", setup.key).parse().unwrap());
+    let key = match setup.secret() {
+        Ok(k) => k,
+        Err(why) => return Ended::Lost(why),
+    };
+    request.headers_mut().insert("authorization", format!("Bearer {}", key).parse().unwrap());
     request
         .headers_mut()
         .insert("user-agent", concat!("argus-bridge/", env!("CARGO_PKG_VERSION")).parse().unwrap());
@@ -1231,7 +1292,7 @@ mod tests {
     fn the_switches_start_off_and_are_kept() {
         let dir = tempfile::tempdir().unwrap();
         assert!(Setup::load(dir.path()).is_none());
-        let mut setup = Setup { id: String::new(), url: "https://a".into(), key: "ac_k".into(), name: "Mac".into(), offers: Offers::default(), on: false, browser: Default::default() };
+        let mut setup = Setup { id: String::new(), url: "https://a".into(), key: "ac_k".into(), kept: String::new(), name: "Mac".into(), offers: Offers::default(), on: false, browser: Default::default() };
         assert_eq!(setup.offers, Offers { browser: false, terminal: false, actions: false });
         setup.offers.terminal = true;
         setup.save(dir.path()).unwrap();
@@ -1241,7 +1302,7 @@ mod tests {
     }
 
     fn link(url: &str) -> Setup {
-        Setup { id: String::new(), url: url.into(), key: "ac_k".into(), name: "Mac".into(), offers: Offers::default(), on: true, browser: Default::default() }
+        Setup { id: String::new(), url: url.into(), key: "ac_k".into(), kept: String::new(), name: "Mac".into(), offers: Offers::default(), on: true, browser: Default::default() }
     }
 
     #[test]
@@ -1255,7 +1316,7 @@ mod tests {
         let b = links.add(two);
         assert_ne!(a, b);
         links.get_mut(&a).unwrap().offers.browser = true;
-        links.save(dir.path()).unwrap();
+        links.write(dir.path()).unwrap();
         let back = Links::load(dir.path());
         assert_eq!(back, links);
         assert!(back.get(&a).unwrap().offers.browser && !back.get(&a).unwrap().offers.terminal);
@@ -1328,5 +1389,42 @@ mod tests {
             let _ = write!(sock, "HTTP/1.1 403 Forbidden\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
         });
         assert!(window_key(&link(&format!("http://127.0.0.1:{port}"))).is_err());
+    }
+
+    #[test]
+    fn the_keys_go_to_the_keychain_and_the_file_keeps_no_secret() {
+        let dir = tempfile::tempdir().unwrap();
+        let chain = crate::logins::Memory::default();
+        let mut links = Links::default();
+        let mut one = link("https://vm-one.example:8090");
+        one.key = "ac_very_secret".into();
+        let id = links.add(one);
+        links.save_in(dir.path(), &chain).unwrap();
+        let file = fs::read_to_string(dir.path().join("computers.json")).unwrap();
+        assert!(!file.contains("ac_very_secret"), "no secret in the file: {file}");
+        let back = Links::load(dir.path());
+        let kept = back.get(&id).unwrap();
+        assert_eq!(kept.kept, "keychain");
+        assert!(!back.keys_in_file());
+        assert_eq!(kept.secret_in(&chain).unwrap(), "ac_very_secret");
+        let mut back = back;
+        assert!(back.remove_in(&id, &chain));
+        assert!(crate::logins::Store::get(&chain, "computer-key:https://vm-one.example:8090").is_err(), "taken out of the keychain too");
+    }
+
+    #[test]
+    fn with_no_keychain_the_key_stays_in_the_file() {
+        struct Broken;
+        impl crate::logins::Store for Broken {
+            fn set(&self, _: &str, _: &str) -> Result<(), String> { Err("no keychain".into()) }
+            fn get(&self, _: &str) -> Result<String, String> { Err("no keychain".into()) }
+            fn delete(&self, _: &str) -> Result<(), String> { Ok(()) }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut links = Links::default();
+        let id = links.add(link("https://vm-one.example:8090"));
+        links.save_in(dir.path(), &Broken).unwrap();
+        let back = Links::load(dir.path());
+        assert_eq!(back.get(&id).unwrap().secret_in(&Broken).unwrap(), "ac_k");
     }
 }
