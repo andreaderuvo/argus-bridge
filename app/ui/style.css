@@ -258,3 +258,10 @@ a.link:hover { text-decoration: underline; }
 .picklist { display: grid; gap: 6px; }
 .pickrow { display: flex; align-items: center; gap: .6rem; height: auto; padding: .6rem .75rem; text-align: left; }
 .pickrow .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* The language at the foot of the sidebar: a globe and a quiet select, each language in its own name. */
+.sidelang { display: grid; gap: 6px; }
+.langpick { display: flex; align-items: center; gap: .4rem; padding: 0 .4rem; color: var(--dim); }
+.langpick .ico { width: 15px; height: 15px; flex: none; }
+.langpick select { height: 26px; padding: 0 .35rem; font-size: .8rem; background: transparent; border-color: transparent; color: var(--text); min-width: 0; flex: 1; }
+.langpick select:hover, .langpick select:focus { border-color: var(--line); background: var(--panel); }

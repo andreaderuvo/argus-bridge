@@ -368,3 +368,16 @@ def test_two_argus_each_with_its_switches(make_page):
     page.click("#sheet .danger.solid")
     page.wait(f"{cards}.length === 1", what="one forgotten, the other kept")
     page.wait("window.__mock.calls.some(c => c[0] === 'machine_forget' && c[1].id === '1')")
+
+
+def test_the_language_is_at_the_foot_of_the_sidebar(make_page):
+    """"If I am in Italian and do not know what 'language' is called, I get lost in Settings" (2026-11-23)."""
+    page = make_page()
+    page.wait("document.querySelectorAll('#langquick option').length === 5", what="the languages")
+    names = page.eval("[...document.querySelectorAll('#langquick option')].map(o => o.textContent).slice(1).join()")
+    assert names == "English,Italiano,Español,Français", names
+    page.eval("const s = document.getElementById('langquick'); s.value = 'it'; s.dispatchEvent(new Event('change'));undefined")
+    # The window comes back in Italian (the mock forgets its calls with the reload; the choice is kept).
+    page.wait("document.getElementById('langquick')?.title === 'Lingua · Language'", what="the window again, in Italian")
+    assert page.eval("document.getElementById('langquick').value") == "it"
+    page.eval("localStorage.removeItem('argus-bridge.lang')")

@@ -224,6 +224,7 @@ function paint(now = false) {
   argus.title = t('Argus in a window of its own, with the notifications of this computer');
   argus.hidden = !snap.machines?.length && !snap.pairs.length;
   $('#version').textContent = snap.version ? `argus-bridge ${snap.version}` : '';
+  langQuick();
   $('#nav').replaceChildren(...PAGES().map(([key, glyph, word]) => {
     const b = el('button', { type: 'button', className: key === page ? 'on' : '', onclick: () => showPage(key) }, [icon(glyph), word, navBadge(key)]);
     b.dataset.page = key;
@@ -384,6 +385,24 @@ function updateBar() {
 
 /* The version, a check for a newer one, whether newer ones install by themselves or are asked first
  * ("someone may not want it automatic", 2026-11-09), and the language. */
+/* The language, always in sight at the foot of the sidebar ("if I am in Italian and do not know what 'language' is
+ * called, I get lost in Settings", 2026-11-23): each language in its own name, built once (a select rebuilt under
+ * the pointer closes). */
+const LANGS = [['', null], ['en', 'English'], ['it', 'Italiano'], ['es', 'Español'], ['fr', 'Français']];
+function langQuick() {
+  const pick = $('#langquick');
+  if (pick.options.length) return;
+  $('#langpick .ico-slot').replaceWith(icon('globe'));
+  for (const [v, name] of LANGS) pick.append(el('option', { value: v, textContent: name || `${t('Language of the system')}`, selected: v === langChosen }));
+  pick.title = t('Language') === 'Language' ? 'Language' : `${t('Language')} · Language`;
+  pick.setAttribute('aria-label', pick.title);
+  pick.onchange = async () => {
+    try { localStorage.setItem('argus-bridge.lang', pick.value); } catch { /* the app keeps it too */ }
+    await run('set_language', { lang: pick.value });
+    location.reload();
+  };
+}
+
 function settingsPage() {
   const check = el('button', { type: 'button', id: 'checkupdates' }, [icon('sync'), t('Check for updates')]);
   check.onclick = async () => {
