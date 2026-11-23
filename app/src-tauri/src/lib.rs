@@ -208,6 +208,14 @@ impl Shared {
     }
 }
 
+/// A value made safe for an address's query (RFC 3986 unreserved kept, every other byte as %XX).
+fn url_part(value: &str) -> String {
+    value.bytes().map(|b| match b {
+        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+        _ => format!("%{b:02X}"),
+    }).collect()
+}
+
 fn host_of(url: &str) -> String {
     url.split("://").nth(1).unwrap_or(url).split(['/', ':']).next().unwrap_or(url).to_string()
 }
@@ -737,6 +745,9 @@ fn start_link(app: &AppHandle, shared: &Arc<Shared>, id: &str) {
         let bell_app = app.clone();
         let bell_shared = shared.clone();
         let bell_link = id.clone();
+        // Which Argus rang: its host, said on every notification ("on example-vm") — with two VMs, a bell
+        // and a click that opened the app's own window said nothing of where it came from (2026-11-23).
+        let bell_from = words::tr("on {host}").replace("{host}", &host_of(&setup.url));
         let bell = move |told: &computer::Told, answer: Option<computer::Answer>| {
             use tauri_plugin_notification::NotificationExt;
             let title = match told.why.as_str() {
@@ -744,12 +755,10 @@ fn start_link(app: &AppHandle, shared: &Arc<Shared>, id: &str) {
                 "failed" => say_plain("{session} failed", &told.session),
                 _ => say_plain("{session} has finished", &told.session),
             };
-            if let Some(answer) = answer {
-                if ask_in_notification(&bell_app, &bell_shared, &bell_link, title.clone(), told, answer) {
-                    return;
-                }
+            if notify_with_click(&bell_app, &bell_shared, &bell_link, &bell_from, title.clone(), told, answer) {
+                return;
             }
-            let _ = bell_app.notification().builder().title(title).body(&told.text).show();
+            let _ = bell_app.notification().builder().title(format!("{title} · {bell_from}")).body(&told.text).show();
         };
         // An agent asking to be signed in: asked here, on this computer, in a dialog of the system — the
         // site, the account and where it is kept; Allow once, Always for this site, or No.
@@ -1063,24 +1072,49 @@ fn open_full_disk_settings(app: AppHandle) -> Res<()> {
         .map_err(|e| say("Something went wrong: {why}", &[("why", e.to_string())]))
 }
 
-/// A question of Argus as a notification with its answers on it: the first option ("Do it") is the
-/// notification's button, the second ("No") its close button, and a click on the text opens Argus.
-/// Only on a Mac (NSUserNotification); elsewhere false, and the question is shown as a plain
-/// notification, answered in Argus.
+/// Notifications still waiting for a click (one thread each, until clicked or cleared from the
+/// Notification Center). Past `MAX_WAITING`, a bell is shown plain rather than holding one more thread.
 #[cfg(target_os = "macos")]
-fn ask_in_notification(app: &AppHandle, shared: &Arc<Shared>, link: &str, title: String, told: &argus_sync_core::computer::Told, answer: argus_sync_core::computer::Answer) -> bool {
+static WAITING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+#[cfg(target_os = "macos")]
+const MAX_WAITING: usize = 64;
+
+/// A bell of Argus as a notification that knows where it came from: the Argus it rang on as the
+/// subtitle, and a click on it opens *that* Argus's window on the session that rang — not this app's
+/// own window. A question carries its answers too: the first option ("Do it") is the notification's
+/// button, the second ("No") its close button. Only on a Mac (NSUserNotification); elsewhere false,
+/// and the bell is shown as a plain notification with the Argus in its title.
+#[cfg(target_os = "macos")]
+fn notify_with_click(app: &AppHandle, shared: &Arc<Shared>, link: &str, from: &str, title: String, told: &argus_sync_core::computer::Told, answer: Option<argus_sync_core::computer::Answer>) -> bool {
     use mac_notification_sys::{MainButton, Notification, NotificationResponse};
-    let (Some(yes), Some(no)) = (told.options.first().cloned(), told.options.get(1).cloned()) else { return false };
-    let (text, app, shared, link) = (told.text.clone(), app.clone(), shared.clone(), link.to_string());
+    use std::sync::atomic::Ordering;
+    let buttons = match &answer {
+        Some(_) => match (told.options.first().cloned(), told.options.get(1).cloned()) {
+            (Some(yes), Some(no)) => Some((yes, no)),
+            _ => return false,
+        },
+        None => None,
+    };
+    if WAITING.fetch_add(1, Ordering::SeqCst) >= MAX_WAITING {
+        WAITING.fetch_sub(1, Ordering::SeqCst);
+        return false;
+    }
+    let (text, from, session) = (told.text.clone(), from.to_string(), told.session.clone());
+    let (app, shared, link) = (app.clone(), shared.clone(), link.to_string());
     std::thread::spawn(move || {
         let _ = mac_notification_sys::set_application(&app.config().identifier);
-        let said = Notification::new().title(&title).message(&text)
-            .main_button(MainButton::SingleAction(&yes)).close_button(&no).wait_for_click(true).send();
-        match said {
-            Ok(NotificationResponse::ActionButton(_)) => answer(yes),
-            Ok(NotificationResponse::CloseButton(_)) => answer(no),
-            Ok(NotificationResponse::Click) => {
-                let _ = open_argus_window(&app, &shared, Some(&link));
+        let mut note = Notification::new();
+        note.title(&title).subtitle(&from).message(&text).wait_for_click(true);
+        if let Some((yes, no)) = &buttons {
+            note.main_button(MainButton::SingleAction(yes)).close_button(no);
+        }
+        let said = note.send();
+        WAITING.fetch_sub(1, Ordering::SeqCst);
+        match (said, buttons, answer) {
+            (Ok(NotificationResponse::ActionButton(_)), Some((yes, _)), Some(answer)) => answer(yes),
+            (Ok(NotificationResponse::CloseButton(_)), Some((_, no)), Some(answer)) => answer(no),
+            (Ok(NotificationResponse::Click), _, _) => {
+                let _ = open_argus_window(&app, &shared, Some(&link), Some(&session));
             }
             _ => {}
         }
@@ -1089,7 +1123,7 @@ fn ask_in_notification(app: &AppHandle, shared: &Arc<Shared>, link: &str, title:
 }
 
 #[cfg(not(target_os = "macos"))]
-fn ask_in_notification(_: &AppHandle, _: &Arc<Shared>, _: &str, _: String, _: &argus_sync_core::computer::Told, _: argus_sync_core::computer::Answer) -> bool {
+fn notify_with_click(_: &AppHandle, _: &Arc<Shared>, _: &str, _: &str, _: String, _: &argus_sync_core::computer::Told, _: Option<argus_sync_core::computer::Answer>) -> bool {
     false
 }
 
@@ -1101,7 +1135,7 @@ fn ask_in_notification(_: &AppHandle, _: &Arc<Shared>, _: &str, _: String, _: &a
 #[tauri::command]
 async fn open_argus(app: AppHandle, shared: tauri::State<'_, Arc<Shared>>, id: Option<String>) -> Res<()> {
     let sh = shared.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || open_argus_window(&app, &sh, id.as_deref()))
+    tauri::async_runtime::spawn_blocking(move || open_argus_window(&app, &sh, id.as_deref(), None))
         .await.map_err(|e| e.to_string())?
 }
 
@@ -1119,11 +1153,16 @@ fn to_front(app: &AppHandle, w: &tauri::WebviewWindow) {
 
 /// Each Argus in a window of its own (`argus-<link id>`), so two VMs are two windows side by side; with no link,
 /// the first folder's server (`argus`).
-fn open_argus_window(app: &AppHandle, shared: &Shared, id: Option<&str>) -> Res<()> {
+fn open_argus_window(app: &AppHandle, shared: &Shared, id: Option<&str>, session: Option<&str>) -> Res<()> {
     let links = argus_sync_core::computer::Links::load(&shared.dir);
     let chosen = id.and_then(|id| links.get(id)).or_else(|| links.links.first());
     let label = chosen.map(|l| format!("argus-{}", l.id)).unwrap_or_else(|| "argus".to_string());
+    // A notification's session: the page brings its window forward (Argus's `#/show?s=`).
+    let show = session.filter(|s| !s.is_empty()).map(|s| format!("/show?s={}", url_part(s)));
     if let Some(w) = app.get_webview_window(&label) {
+        if let Some(show) = &show {
+            let _ = w.eval(format!("location.hash = {}", serde_json::to_string(&format!("#{show}")).unwrap_or_default()));
+        }
         to_front(app, &w);
         return Ok(());
     }
@@ -1132,8 +1171,11 @@ fn open_argus_window(app: &AppHandle, shared: &Shared, id: Option<&str>) -> Res<
         .ok_or_else(|| say("Connect this computer or a folder first: then Argus opens here", &[]))?;
     // Signed in already: a device key of its own, asked of that Argus now and handed to the page in the address's
     // fragment (never sent over the network, never written here). Refused or unreachable: the sign-in, as before.
-    let url = match chosen.map(argus_sync_core::computer::window_key) {
-        Some(Ok(key)) => format!("{}/#token={}", url.trim_end_matches('/'), key),
+    let base = url.trim_end_matches('/').to_string();
+    let url = match (chosen.map(argus_sync_core::computer::window_key), &show) {
+        (Some(Ok(key)), Some(show)) => format!("{base}/#token={key}&{show}"),
+        (Some(Ok(key)), None) => format!("{base}/#token={key}"),
+        (_, Some(show)) => format!("{base}/#{show}"),
         _ => url,
     };
     let title = match chosen {
@@ -1438,11 +1480,11 @@ pub fn run() {
                     // Off the menu's thread: the window's key is asked of Argus first, over the network.
                     "argus" => {
                         let (a, sh) = (app.clone(), tray_shared.clone());
-                        std::thread::spawn(move || { let _ = open_argus_window(&a, &sh, None); });
+                        std::thread::spawn(move || { let _ = open_argus_window(&a, &sh, None, None); });
                     }
                     other if other.starts_with("argus:") => {
                         let (a, sh, id) = (app.clone(), tray_shared.clone(), other["argus:".len()..].to_string());
-                        std::thread::spawn(move || { let _ = open_argus_window(&a, &sh, Some(&id)); });
+                        std::thread::spawn(move || { let _ = open_argus_window(&a, &sh, Some(&id), None); });
                     }
                     "now" => tray_shared.nudge(),
                     "check" => {
@@ -1496,6 +1538,12 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_session_name_is_safe_in_the_address_a_notification_opens() {
+        assert_eq!(super::url_part("claude-argus"), "claude-argus");
+        assert_eq!(super::url_part("a b&c#d/é"), "a%20b%26c%23d%2F%C3%A9");
+    }
+
     #[test]
     fn the_clipboard_is_granted_to_argus_own_address_only() {
         let o = |u: &str| super::argus_origin(&u.parse().unwrap());

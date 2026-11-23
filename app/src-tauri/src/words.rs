@@ -54,6 +54,7 @@ pub fn tr(key: &str) -> String {
         ("{session} is waiting for you", "{session} ti aspetta", "{session} te espera", "{session} vous attend"),
         ("{session} failed", "{session} non è riuscito", "{session} falló", "{session} a échoué"),
         ("{session} has finished", "{session} ha finito", "{session} ha terminado", "{session} a terminé"),
+        ("on {host}", "su {host}", "en {host}", "sur {host}"),
         ("argus-bridge — nothing connected", "argus-bridge — nessuna cartella collegata", "argus-bridge — ninguna carpeta conectada", "argus-bridge — aucun dossier connecté"),
         ("argus-bridge — paused", "argus-bridge — in pausa", "argus-bridge — en pausa", "argus-bridge — en pause"),
         ("argus-bridge — {n} conflict(s) to look at", "argus-bridge — {n} conflitti da guardare", "argus-bridge — {n} conflictos por revisar", "argus-bridge — {n} conflit(s) à regarder"),

@@ -59,6 +59,7 @@ system's keychain (macOS Keychain, Windows Credential Manager, the Secret Servic
 no secret; macOS may ask once after an update — *Always Allow*. A system with no keychain keeps it in the file (0600).
 
 - A question for you (*Do it / No*) arrives as a notification of the system, answered on it (macOS).
+- Every bell says which Argus it rang on; on macOS a click on it opens that Argus on the session that rang.
 - With Terminal or Actions on and no **Full Disk Access**, macOS stops an agent's command at each
   protected folder to ask "Allow?": the *This computer* card says so and opens the setting.
 - A Chrome left on the browser profile by an earlier run is taken over, or ended and started again.
