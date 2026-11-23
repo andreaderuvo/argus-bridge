@@ -1096,7 +1096,9 @@ fn ask_in_notification(_: &AppHandle, _: &Arc<Shared>, _: &str, _: String, _: &a
 /// and "Open Argus" sometimes took seconds, or a second press, to appear (2026-11-09).
 #[tauri::command]
 async fn open_argus(app: AppHandle, shared: tauri::State<'_, Arc<Shared>>, id: Option<String>) -> Res<()> {
-    open_argus_window(&app, &shared, id.as_deref())
+    let sh = shared.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || open_argus_window(&app, &sh, id.as_deref()))
+        .await.map_err(|e| e.to_string())?
 }
 
 /// Bring this app to the front: pressed from the menu-bar icon, macOS shows a window of an app that is
@@ -1124,6 +1126,12 @@ fn open_argus_window(app: &AppHandle, shared: &Shared, id: Option<&str>) -> Res<
     let url = chosen.map(|l| l.url.clone())
         .or_else(|| Pairs::load(&shared.dir).pairs.first().map(|p| p.url.clone()))
         .ok_or_else(|| say("Connect this computer or a folder first: then Argus opens here", &[]))?;
+    // Signed in already: a device key of its own, asked of that Argus now and handed to the page in the address's
+    // fragment (never sent over the network, never written here). Refused or unreachable: the sign-in, as before.
+    let url = match chosen.map(argus_sync_core::computer::window_key) {
+        Some(Ok(key)) => format!("{}/#token={}", url.trim_end_matches('/'), key),
+        _ => url,
+    };
     let title = match chosen {
         Some(l) if links.links.len() > 1 => format!("Argus — {}", host_of(&l.url)),
         _ => "Argus".to_string(),
@@ -1423,15 +1431,14 @@ pub fn run() {
                 .show_menu_on_left_click(false)
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "open" => show(app),
+                    // Off the menu's thread: the window's key is asked of Argus first, over the network.
                     "argus" => {
-                        if let Some(sh) = app.try_state::<Arc<Shared>>() {
-                            let _ = open_argus_window(app, &sh, None);
-                        }
+                        let (a, sh) = (app.clone(), tray_shared.clone());
+                        std::thread::spawn(move || { let _ = open_argus_window(&a, &sh, None); });
                     }
                     other if other.starts_with("argus:") => {
-                        if let Some(sh) = app.try_state::<Arc<Shared>>() {
-                            let _ = open_argus_window(app, &sh, Some(&other["argus:".len()..]));
-                        }
+                        let (a, sh, id) = (app.clone(), tray_shared.clone(), other["argus:".len()..].to_string());
+                        std::thread::spawn(move || { let _ = open_argus_window(&a, &sh, Some(&id)); });
                     }
                     "now" => tray_shared.nudge(),
                     "check" => {

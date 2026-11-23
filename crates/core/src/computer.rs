@@ -247,6 +247,26 @@ impl Links {
     }
 }
 
+/// A key for this computer's own Argus window ("I open Argus from argus-bridge and do not know the token",
+/// 2026-11-23): asked of that Argus with the computer's key each time the window is made, and never written here —
+/// a new one revokes the one before. Err when that Argus says no (its switch off, an older Argus) or cannot be
+/// reached: the window then opens on the sign-in, as before.
+pub fn window_key(setup: &Setup) -> Result<String, String> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(5))
+        .timeout_read(Duration::from_secs(10))
+        .user_agent(concat!("argus-bridge/", env!("CARGO_PKG_VERSION")))
+        .build();
+    let said: Value = agent
+        .post(&format!("{}/api/computers/window-key", setup.url.trim_end_matches('/')))
+        .set("authorization", &format!("Bearer {}", setup.key))
+        .send_json(json!({}))
+        .map_err(|e| e.to_string())?
+        .into_json()
+        .map_err(|e| e.to_string())?;
+    said.get("key").and_then(Value::as_str).filter(|k| !k.is_empty()).map(str::to_string).ok_or_else(|| "no key in the answer".to_string())
+}
+
 // ------------------------------------------------------------------------------------- the browser
 
 /// Every browser found here that can be lent (Chrome, Chromium, Edge, Brave), for the person to choose.
@@ -1268,5 +1288,45 @@ mod tests {
         assert_eq!(links.browser.flags, "--window-size=1400,900", "its browser settings become everybody's");
         assert!(!dir.path().join("computer.json").exists(), "taken in once");
         assert_eq!(Links::load(dir.path()), links);
+    }
+
+    #[test]
+    fn the_window_key_is_asked_with_the_computers_key_and_never_kept() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let served = thread::spawn(move || {
+            let (mut sock, _) = listener.accept().unwrap();
+            let mut got = Vec::new();
+            let mut buf = [0u8; 4096];
+            while !String::from_utf8_lossy(&got).contains("\r\n\r\n{}") {
+                let n = sock.read(&mut buf).unwrap();
+                if n == 0 { break; }
+                got.extend_from_slice(&buf[..n]);
+            }
+            let body = r#"{"key":"0123abcd","device":"d1","name":"Mac (argus-bridge)"}"#;
+            write!(sock, "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}", body.len(), body).unwrap();
+            String::from_utf8_lossy(&got).to_string()
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let mut setup = link(&format!("http://127.0.0.1:{port}/"));
+        setup.key = "ac_secret".into();
+        assert_eq!(window_key(&setup).unwrap(), "0123abcd");
+        let asked = served.join().unwrap().to_lowercase();
+        assert!(asked.starts_with("post /api/computers/window-key "), "{asked}");
+        assert!(asked.contains("authorization: bearer ac_secret"), "{asked}");
+        assert!(fs::read_dir(dir.path()).unwrap().next().is_none(), "nothing written");
+    }
+
+    #[test]
+    fn a_window_key_refused_is_an_error_not_a_key() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        thread::spawn(move || {
+            let (mut sock, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = sock.read(&mut buf);
+            let _ = write!(sock, "HTTP/1.1 403 Forbidden\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
+        });
+        assert!(window_key(&link(&format!("http://127.0.0.1:{port}"))).is_err());
     }
 }

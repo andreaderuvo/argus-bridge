@@ -49,6 +49,11 @@ its own, with its own switches, connection and *Open Argus* window. They share t
 agent works in its own tab) and the logins. Kept in `computers.json` in the app's folder; the single
 `computer.json` of 0.1.29 and before is taken in by itself.
 
+**Open Argus, already signed in**: each time argus-bridge opens an Argus window it asks that Argus for a device
+key of its own (`<computer> (argus-bridge)`, listed in Argus's devices), with the computer's key. It is never
+written on this computer, each new one revokes the last, and forgetting the computer in Argus (or switching it
+off there, in Settings → Computers) revokes it. An older Argus, or the switch off: the window asks for the token.
+
 - A question for you (*Do it / No*) arrives as a notification of the system, answered on it (macOS).
 - With Terminal or Actions on and no **Full Disk Access**, macOS stops an agent's command at each
   protected folder to ask "Allow?": the *This computer* card says so and opens the setting.
