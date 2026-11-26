@@ -1161,7 +1161,10 @@ fn open_argus_window(app: &AppHandle, shared: &Shared, id: Option<&str>, session
     let show = session.filter(|s| !s.is_empty()).map(|s| format!("/show?s={}", url_part(s)));
     if let Some(w) = app.get_webview_window(&label) {
         if let Some(show) = &show {
-            let _ = w.eval(format!("location.hash = {}", serde_json::to_string(&format!("#{show}")).unwrap_or_default()));
+            // Through the page's own `argusGo` (pushState): assigning `location.hash` is a navigation, and WebKit
+            // on macOS 26 may answer one by loading the window's first address again (Argus's router.js).
+            let target = serde_json::to_string(&format!("#{show}")).unwrap_or_default();
+            let _ = w.eval(format!("window.argusGo ? window.argusGo({target}) : (location.hash = {target})"));
         }
         to_front(app, &w);
         return Ok(());
